@@ -69,7 +69,7 @@
    - Allow Python application network access
    - Configure localhost exemptions
 
-9. **Create project directory structure**
+9. ✅ **Create project directory structure**
    - Copy `docker-compose.yml` to Windows host
    - Create `Gen3_AWE/` folder structure:
      - `config/` (devices.yaml, telegraf.conf, grafana.ini)
@@ -79,7 +79,7 @@
      - `profiles/` (current profiles CSV)
    - Create `tests/` for hardware validation scripts
 
-10. **Test basic Docker stack**
+10. ✅ **Test basic Docker stack**
     - Start InfluxDB container: `docker compose up -d influxdb`
     - Create org `electrolyzer`, bucket `electrolyzer_data`
     - Generate admin token, save securely
