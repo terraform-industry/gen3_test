@@ -112,12 +112,12 @@
     - Support 16 relays across 2 modules
     - Include safety checks and state validation
 
-14. **Test Pico TC-08 connectivity**
+14. ✅ **Test Pico TC-08 connectivity**
     - Use existing test scripts to verify USB connection
     - Detect all 8 thermocouple channels
     - Verify cold junction compensation
 
-15. **Implement Pico TC-08 reader**
+15. ✅ **Implement Pico TC-08 reader**
     - Create `Gen3_AWE/hdw/pico_tc08_http.py`
     - Read 8 thermocouple channels at 1Hz (Pico limitation)
     - Support multiple thermocouple types (K, J, T, etc.) from devices.yaml
