@@ -130,7 +130,7 @@
     - Test read/write operations (voltage, current, enable)
     - Document register map
 
-17. **Implement PSU Modbus RTU client**
+17. ✅ **Implement PSU Modbus RTU client**
     - Create `Gen3_AWE/gui/psu_rtu_client.py`
     - Functions: `set_voltage()`, `set_current()`, `enable_output()`, `disable_output()`
     - Read current PSU state: `get_voltage()`, `get_current()`, `get_power()`
