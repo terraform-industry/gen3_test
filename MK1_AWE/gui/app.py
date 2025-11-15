@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""MK1_AWE Control GUI Application"""
+"""Gen3 AWE Control GUI Application"""
 
 import sys
 import logging
 from PySide6.QtWidgets import QApplication
 from main_window import MainWindow
 
-# Suppress pymodbus noise - only show critical errors
+# Suppress library noise - only show critical errors
 logging.getLogger('pymodbus').setLevel(logging.CRITICAL)
+logging.getLogger('nidaqmx').setLevel(logging.WARNING)
 
 
 def main():

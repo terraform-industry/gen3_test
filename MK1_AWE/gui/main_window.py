@@ -15,16 +15,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        # Set window title based on PSU mode
-        try:
-            from config_loader import get_psu_config
-            psu_config = get_psu_config()
-            mode = psu_config['mode']
-            version_name = "Gen 2 Test Rig" if mode == 'gen2' else "Mark 1"
-            self.setWindowTitle(f"AWE MK1 Control App: {version_name}")
-        except:
-            self.setWindowTitle("AWE MK1 Control App")
-        
+        # Set window title
+        self.setWindowTitle("Gen3 AWE Control App")
         self.setMinimumSize(1000, 700)
         
         # Track which devices have been initialized to safe state
@@ -89,13 +81,6 @@ class MainWindow(QMainWindow):
         # Connect hardware status changes to control panel availability
         self.hw_status_widget.hardware_status_changed.connect(self._update_control_availability)
         
-        # Connect interlock signals
-        self.relay_panel.contactor_state_changed.connect(self.psu_panel.set_contactor_state)
-        self.psu_panel.current_changed.connect(self.relay_panel.set_psu_current)
-        
-        # Connect purge valve control (Gen2 mode)
-        self.bga_panel.purge_valves_control.connect(self.relay_panel.set_purge_valves)
-        
         # Start background worker to refresh status every 5 seconds
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self.hw_status_widget.update_status)
@@ -124,13 +109,13 @@ class MainWindow(QMainWindow):
             self.relay_panel.set_all_off()
             self.initialized_devices.add('RLM')
         elif not rlm_online and 'RLM' in self.initialized_devices:
-            # Remove from initialized if disconnected (will re-init on reconnect)
             self.initialized_devices.discard('RLM')
         
         # BGA panel: enabled if at least one BGA is online
         bga1_online = status_results.get('BGA01', False)
         bga2_online = status_results.get('BGA02', False)
-        bgas_online = bga1_online or bga2_online
+        bga3_online = status_results.get('BGA03', False)
+        bgas_online = bga1_online or bga2_online or bga3_online
         self.bga_panel.set_hardware_available(bga1_online, bga2_online)
         
         # Initialize BGAs to safe state on first connection
@@ -140,39 +125,9 @@ class MainWindow(QMainWindow):
         elif not bgas_online and 'BGA' in self.initialized_devices:
             self.initialized_devices.discard('BGA')
         
-        # PSU panel: mode-aware availability check
-        psu_data = status_results.get('PSUs', ('unknown', False))
-        psu_online = False
-        
-        if isinstance(psu_data, tuple) and len(psu_data) == 2:
-            mode, status_info = psu_data
-            if mode == 'gen2':
-                # Gen2: LabJack online = 1 PSU available
-                psu_online = status_info
-                psu_count = 1 if status_info else 0
-            elif mode == 'mk1':
-                # MK1: Count of online PSUs
-                online_count, total = status_info if isinstance(status_info, tuple) else (0, 10)
-                psu_online = online_count > 0
-                psu_count = online_count
-            else:
-                psu_count = 0
-        else:
-            psu_count = 0
-        
-        self.psu_panel.set_hardware_available(psu_count)
-        
-        # Initialize PSU to safe state on first connection
-        if psu_online and 'PSU' not in self.initialized_devices:
-            try:
-                from psu_client import stop
-                stop()
-                print("PSU initialized to safe state (0A)")
-                self.initialized_devices.add('PSU')
-            except Exception as e:
-                print(f"Error initializing PSU to safe state: {e}")
-        elif not psu_online and 'PSU' in self.initialized_devices:
-            self.initialized_devices.discard('PSU')
+        # PSU panel: On hold for now
+        psu_online = status_results.get('PSU', False)
+        # self.psu_panel.set_hardware_available(psu_online)  # Uncomment when PSU implemented
         
         # Store current status for next comparison
         self.previous_status = status_results.copy()
@@ -184,34 +139,12 @@ class MainWindow(QMainWindow):
         
         disconnected = []
         
-        # Check individual devices
-        for device in ['RLM', 'TCM', 'AIM', 'CVM', 'BGA01', 'BGA02']:
+        # Check all Gen3 devices
+        for device in ['AIM', 'RLM', 'TCM', 'BGA01', 'BGA02', 'BGA03', 'PSU']:
             was_online = self.previous_status.get(device, False)
             is_online = current_status.get(device, False)
             if was_online and not is_online:
                 disconnected.append(device)
-        
-        # Check PSUs (special case - mode-aware tuple)
-        prev_psu = self.previous_status.get('PSUs', ('unknown', False))
-        curr_psu = current_status.get('PSUs', ('unknown', False))
-        
-        if isinstance(prev_psu, tuple) and isinstance(curr_psu, tuple) and len(prev_psu) == 2 and len(curr_psu) == 2:
-            prev_mode, prev_status = prev_psu
-            curr_mode, curr_status = curr_psu
-            
-            # Gen2: Simple boolean
-            if prev_mode == 'gen2' and curr_mode == 'gen2':
-                if prev_status and not curr_status:
-                    disconnected.append('PSU (LabJack)')
-            # MK1: Count tuple
-            elif prev_mode == 'mk1' and curr_mode == 'mk1':
-                if isinstance(prev_status, tuple) and isinstance(curr_status, tuple):
-                    prev_count, _ = prev_status
-                    curr_count, _ = curr_status
-                    if prev_count > 0 and curr_count == 0:
-                        disconnected.append('All PSUs')
-                    elif curr_count < prev_count:
-                        disconnected.append(f'{prev_count - curr_count} PSU(s)')
         
         # Show alert for disconnections
         if disconnected:
@@ -280,19 +213,12 @@ class MainWindow(QMainWindow):
             if self.hw_status_widget.worker.isRunning():
                 self.hw_status_widget.worker.wait(1000)  # Wait up to 1 second
         
-        # CRITICAL: PSU to 0A FIRST (before opening contactor to prevent arcing)
+        # PSU safe state (when implemented)
         if 'PSU' in self.initialized_devices:
-            try:
-                from psu_client import stop
-                stop()
-                print("PSU set to safe state (0A)")
-                # Brief delay to ensure LabJack processes command
-                import time
-                time.sleep(0.1)
-            except Exception as e:
-                print(f"Error setting PSU to safe state on shutdown: {e}")
+            # TODO: Implement PSU safe shutdown (0A, then disable)
+            print("PSU safe shutdown - not yet implemented")
         
-        # Return RLM to safe state (including contactor) - safe now that current is 0A
+        # Return relays to safe state
         if 'RLM' in self.initialized_devices:
             try:
                 self.relay_panel.set_all_off()

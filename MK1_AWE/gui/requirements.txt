@@ -1,11 +1,15 @@
-# MK1_AWE Control GUI Dependencies
-# Python 3.9+
+# Gen3 AWE Control GUI Dependencies
+# Python 3.11+
 
-# GUI Framework (compatible with Python 3.13)
+# GUI Framework
 PySide6==6.8.0.2
 
-# Modbus TCP Client
+# NI-DAQmx (requires NI-DAQmx drivers installed)
+nidaqmx
+
+# Modbus RTU/Serial (for PSU)
 pymodbus==3.6.7
+pyserial
 
 # InfluxDB Client
 influxdb-client==1.43.0
@@ -13,8 +17,11 @@ influxdb-client==1.43.0
 # YAML Configuration Parser
 PyYAML==6.0.2
 
-# HTTP Client
+# HTTP Client (for BGA bridges)
 requests==2.32.3
+
+# HTTP Server (for hardware bridges)
+Flask
 
 # Retry/Backoff Logic
 tenacity==9.0.0

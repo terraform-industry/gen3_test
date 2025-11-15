@@ -168,26 +168,26 @@
     - Remove old Modbus TCP inputs (MK1 devices)
     - Configure output to InfluxDB
 
-22. **Test individual hardware bridges**
+22. ✅ **Test individual hardware bridges**
     - Start NI analog bridge, verify `/metrics` returns data
     - Start Pico TC-08 bridge, verify `/metrics` returns data
     - Start PSU bridge (if implemented), verify `/metrics` returns data
     - Check InfluxDB line protocol format
 
-23. **Test end-to-end monitoring pipeline**
+23. ✅ **Test end-to-end monitoring pipeline**
     - Start Docker stack: `docker compose up -d`
     - Start all hardware bridges
     - Verify data flowing: Telegraf → InfluxDB
     - Query InfluxDB for measurements: `ni_analog`, `tc08`, `psu`
     - Check data rate and completeness
 
-24. **Create systemd equivalents for Windows**
+24. ✅ **Create systemd equivalents for Windows**
     - Option A: Use Windows Task Scheduler for auto-start
     - Option B: Use NSSM (Non-Sucking Service Manager) to run Python bridges as services
     - Configure bridges to auto-restart on failure
     - Document service management commands
 
-25. **Hardware integration testing**
+25. ✅ **Hardware integration testing**
     - Run all bridges simultaneously
     - Monitor system resource usage (CPU, memory, network)
     - Stress test: rapid relay toggling, high-frequency analog reads
@@ -286,31 +286,31 @@
 
 ### Phase 4: Grafana Dashboards (41-45)
 
-41. **Start Grafana and configure data source**
+41. ✅ **Start Grafana and configure data source**
     - Access Grafana UI: http://localhost:3000
     - Add InfluxDB v2 data source
     - Configure org, bucket, token
     - Test connection
 
-42. **Create Gen3 dashboard layout**
+42. ✅ **Create Gen3 dashboard layout**
     - Design panel structure:
-      - Row 1: Analog inputs (8 channels, 4-20mA converted)
+      - Row 1: Analog inputs (16 channels, raw mA)
       - Row 2: Thermocouples (8 channels, °C)
-      - Row 3: Relay states (16 channels, binary)
-      - Row 4: PSU (V, I, P, status)
+      - Row 3: Relay states (16 channels, binary) - TBD
+      - Row 4: PSU (V, I, P, status) - ON HOLD
 
-43. **Create Flux queries for analog inputs**
+43. ✅ **Create Flux queries for analog inputs**
     - Query `ni_analog` measurement
     - Apply engineering unit conversions
     - Graphing: Time series with thresholds/annotations
     - Save example queries to `Gen3_AWE/grafana/queries.flux`
 
-44. **Create Flux queries for thermocouples**
+44. ✅ **Create Flux queries for thermocouples**
     - Query `tc08` measurement
     - Graph all 8 channels with color coding
     - Add temperature thresholds (high/low alarms)
 
-45. **Create Flux queries for PSU and relays**
+45. **⏸️ ON HOLD - Create Flux queries for PSU and relays**
     - PSU: V/I/P on single panel, status as state timeline
     - Relays: State timeline showing all 16 channels
     - Add annotations for profile start/stop events
