@@ -3,6 +3,7 @@
 
 import sys
 import logging
+import ctypes
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
@@ -14,6 +15,11 @@ logging.getLogger('nidaqmx').setLevel(logging.WARNING)
 
 
 def main():
+    # Set Windows App ID (makes taskbar icon work correctly on Windows)
+    if sys.platform == 'win32':
+        myappid = 'terraformindustries.gen3awe.control.1.0'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    
     app = QApplication(sys.argv)
     
     # Set app icon
