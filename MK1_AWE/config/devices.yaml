@@ -42,12 +42,12 @@ devices:
 
   PSU:
     protocol: "modbus_rtu"
-    com_port: ""  # TBD
+    com_port: "COM11"
     baud_rate: 9600
     parity: "N"
     stop_bits: 1
     slave_id: 1
-    timeout: 1.0
+    timeout: 0.5
 
 # Module Configurations
 modules:
