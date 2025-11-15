@@ -130,6 +130,18 @@ class MainWindow(QMainWindow):
         psu_count = 1 if psu_online else 0
         self.psu_panel.set_hardware_available(psu_count)
         
+        # Initialize PSU to safe state on first connection
+        if psu_online and 'PSU' not in self.initialized_devices:
+            try:
+                from psu_rtu_client import safe_shutdown
+                safe_shutdown()
+                print("PSU initialized to safe state (0V, 0A, OFF)")
+                self.initialized_devices.add('PSU')
+            except Exception as e:
+                print(f"Error initializing PSU to safe state: {e}")
+        elif not psu_online and 'PSU' in self.initialized_devices:
+            self.initialized_devices.discard('PSU')
+        
         # Store current status for next comparison
         self.previous_status = status_results.copy()
     
@@ -214,10 +226,14 @@ class MainWindow(QMainWindow):
             if self.hw_status_widget.worker.isRunning():
                 self.hw_status_widget.worker.wait(1000)  # Wait up to 1 second
         
-        # PSU safe state (when implemented)
+        # PSU safe state
         if 'PSU' in self.initialized_devices:
-            # TODO: Implement PSU safe shutdown (0A, then disable)
-            print("PSU safe shutdown - not yet implemented")
+            try:
+                from psu_rtu_client import safe_shutdown
+                safe_shutdown()
+                print("PSU set to safe state (0V, 0A, OFF)")
+            except Exception as e:
+                print(f"Error setting PSU to safe state: {e}")
         
         # Return relays to safe state
         if 'RLM' in self.initialized_devices:

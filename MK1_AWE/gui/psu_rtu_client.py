@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-PSU Modbus RTU Control Client
-Controls single PSU via RS485/USB adapter
+PSU Control Client (HTTP-based)
+Controls single PSU via HTTP bridge to avoid COM port conflicts
 """
 
-import minimalmodbus
+import requests
 import yaml
-import time
 import threading
 from pathlib import Path
 from typing import Optional, Dict
 
 # Configuration
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "devices.yaml"
+PSU_BRIDGE_URL = "http://localhost:8883"
 
 # Safety limits
 VOLTAGE_MIN = 100.0  # V
@@ -25,30 +25,57 @@ psu_lock = threading.Lock()
 
 
 class PSUClient:
-    """Client for controlling PSU via Modbus RTU"""
+    """Client for controlling PSU via HTTP bridge"""
     
     def __init__(self):
-        self.config = self._load_config()
-        self.psu_config = self.config['devices']['PSU']
-        self.com_port = self.psu_config['com_port']
-        self.psu = None
-        self._setup_connection()
+        self.bridge_url = PSU_BRIDGE_URL
     
-    def _load_config(self):
-        """Load configuration from devices.yaml"""
-        with open(CONFIG_PATH, 'r') as f:
-            return yaml.safe_load(f)
+    def _send_command(self, cmd_data):
+        """Send command to PSU bridge"""
+        try:
+            response = requests.post(
+                f"{self.bridge_url}/command",
+                json=cmd_data,
+                timeout=2.0
+            )
+            if response.status_code == 200:
+                return True
+            else:
+                data = response.json()
+                print(f"✗ Command failed: {data.get('error', 'Unknown error')}")
+                return False
+        except requests.exceptions.Timeout:
+            print("✗ Command timeout")
+            return False
+        except Exception as e:
+            print(f"✗ Command error: {e}")
+            return False
     
-    def _setup_connection(self):
-        """Setup Modbus connection"""
-        if not self.com_port:
-            raise ValueError("COM port not configured in devices.yaml")
-        
-        self.psu = minimalmodbus.Instrument(self.com_port, self.psu_config['slave_id'])
-        self.psu.serial.baudrate = self.psu_config['baud_rate']
-        self.psu.mode = minimalmodbus.MODE_RTU
-        self.psu.serial.timeout = self.psu_config['timeout']
-        self.psu.close_port_after_each_call = True  # Essential for USB adapters
+    def _read_status(self):
+        """Read current PSU status from bridge"""
+        try:
+            response = requests.get(f"{self.bridge_url}/metrics", timeout=1.0)
+            if response.status_code == 200:
+                # Parse InfluxDB line protocol (simple extraction)
+                text = response.text.strip()
+                if not text or text.startswith('#'):
+                    return None
+                
+                # Extract values from line protocol
+                parts = text.split(' ')
+                if len(parts) >= 2:
+                    fields = parts[1].split(',')
+                    data = {}
+                    for field in fields:
+                        key, val = field.split('=')
+                        try:
+                            data[key] = float(val)
+                        except:
+                            data[key] = val
+                    return data
+            return None
+        except Exception:
+            return None
     
     def set_voltage_current(self, voltage: float, current: float) -> bool:
         """
@@ -67,36 +94,31 @@ class PSUClient:
             - Above max → clamp to max
         """
         with psu_lock:
-            try:
-                # Apply safety limits
-                if voltage < VOLTAGE_MIN or current < CURRENT_MIN:
-                    # Below minimum → safe state (0V, 0A, OFF)
-                    print(f"Below safety limits → Setting safe state (0V, 0A, OFF)")
-                    voltage = 0.0
-                    current = 0.0
-                    enable = False
-                else:
-                    # Clamp to max limits
-                    voltage = min(voltage, VOLTAGE_MAX)
-                    current = min(current, CURRENT_MAX)
-                    enable = True
-                
-                # Write voltage (register 0x0101, scale 0.1)
-                self.psu.write_register(0x0101, int(voltage / 0.1))
-                time.sleep(0.1)  # Essential delay between writes
-                
-                # Write current (register 0x0102, scale 0.1)
-                self.psu.write_register(0x0102, int(current / 0.1))
-                time.sleep(0.1)
-                
-                # Write output enable (register 0x0103)
-                self.psu.write_register(0x0103, 1 if enable else 0)
-                
+            # Apply safety limits
+            if voltage < VOLTAGE_MIN or current < CURRENT_MIN:
+                # Below minimum → safe state (0V, 0A, OFF)
+                print(f"Below safety limits → Setting safe state (0V, 0A, OFF)")
+                voltage = 0.0
+                current = 0.0
+                enable = 0
+            else:
+                # Clamp to max limits
+                voltage = min(voltage, VOLTAGE_MAX)
+                current = min(current, CURRENT_MAX)
+                enable = 1
+            
+            # Send command to bridge
+            cmd_data = {
+                'type': 'set_voltage_current',
+                'voltage': voltage,
+                'current': current,
+                'enable': enable
+            }
+            
+            if self._send_command(cmd_data):
                 print(f"✓ PSU set: {voltage:.1f}V, {current:.1f}A, {'ON' if enable else 'OFF'}")
                 return True
-            
-            except Exception as e:
-                print(f"✗ Failed to set PSU: {e}")
+            else:
                 return False
     
     def set_voltage(self, voltage: float) -> bool:
@@ -112,24 +134,20 @@ class PSUClient:
     def enable_output(self) -> bool:
         """Enable PSU output"""
         with psu_lock:
-            try:
-                self.psu.write_register(0x0103, 1)
+            cmd_data = {'type': 'enable'}
+            if self._send_command(cmd_data):
                 print("✓ PSU output enabled")
                 return True
-            except Exception as e:
-                print(f"✗ Failed to enable PSU: {e}")
-                return False
+            return False
     
     def disable_output(self) -> bool:
         """Disable PSU output"""
         with psu_lock:
-            try:
-                self.psu.write_register(0x0103, 0)
+            cmd_data = {'type': 'disable'}
+            if self._send_command(cmd_data):
                 print("✓ PSU output disabled")
                 return True
-            except Exception as e:
-                print(f"✗ Failed to disable PSU: {e}")
-                return False
+            return False
     
     def safe_shutdown(self) -> bool:
         """Set PSU to safe state: 0V, 0A, output OFF"""
@@ -137,66 +155,31 @@ class PSUClient:
     
     def get_voltage(self) -> Optional[float]:
         """Read actual output voltage"""
-        with psu_lock:
-            try:
-                raw = self.psu.read_register(0x0001)
-                return raw * 0.1
-            except Exception as e:
-                print(f"✗ Failed to read voltage: {e}")
-                return None
+        data = self._read_status()
+        return data.get('voltage') if data else None
     
     def get_current(self) -> Optional[float]:
         """Read actual output current"""
-        with psu_lock:
-            try:
-                raw = self.psu.read_register(0x0002)
-                return raw * 0.1
-            except Exception as e:
-                print(f"✗ Failed to read current: {e}")
-                return None
+        data = self._read_status()
+        return data.get('current') if data else None
     
     def get_power(self) -> Optional[float]:
         """Read actual output power"""
-        with psu_lock:
-            try:
-                raw = self.psu.read_register(0x0003)
-                return raw * 0.1
-            except Exception as e:
-                print(f"✗ Failed to read power: {e}")
-                return None
+        data = self._read_status()
+        return data.get('power') if data else None
     
     def get_all_status(self) -> Optional[Dict]:
-        """Read all PSU status registers"""
-        with psu_lock:
-            try:
-                raw_values = self.psu.read_registers(0x0001, 13)
-                
-                status = {
-                    'voltage': raw_values[0] * 0.1,
-                    'current': raw_values[1] * 0.1,
-                    'power': raw_values[2] * 0.1,
-                    'capacity': raw_values[3] * 0.1,
-                    'runtime': raw_values[4],
-                    'battery_v': raw_values[5] * 0.1,
-                    'sys_fault': raw_values[6],
-                    'mod_fault': raw_values[7],
-                    'temperature': raw_values[8],
-                    'status': raw_values[9],
-                    'set_voltage_rb': raw_values[10] * 0.1,
-                    'set_current_rb': raw_values[11] * 0.1,
-                    'output_enable': raw_values[12]
-                }
-                return status
-            
-            except Exception as e:
-                print(f"✗ Failed to read PSU status: {e}")
-                return None
+        """Read all PSU status"""
+        return self._read_status()
     
     def is_device_online(self) -> bool:
-        """Check if PSU is accessible"""
+        """Check if PSU bridge is accessible"""
         try:
-            self.psu.read_register(0x0001)
-            return True
+            response = requests.get(f"{self.bridge_url}/health", timeout=1.0)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('device_online', False)
+            return False
         except Exception:
             return False
 
@@ -244,17 +227,21 @@ def safe_shutdown() -> bool:
 
 # Test code
 if __name__ == "__main__":
-    print("PSU Control Test")
+    import time
+    
+    print("PSU Control Test (via HTTP bridge)")
+    print("Make sure psu_http.py bridge is running!")
     print()
     
     client = PSUClient()
     
     # Check device
     if not client.is_device_online():
-        print("✗ PSU not found")
+        print("✗ PSU bridge not responding")
+        print("  Start bridge: python MK1_AWE/hdw/psu_http.py")
         exit(1)
     
-    print(f"✓ Found PSU on {client.com_port}")
+    print(f"✓ PSU bridge online")
     print()
     
     # Read current status
@@ -270,10 +257,11 @@ if __name__ == "__main__":
     # Test set command
     print("Testing: Set 150V, 5A (should enable output)")
     if client.set_voltage_current(150.0, 5.0):
-        time.sleep(1)
+        time.sleep(2)
         v = client.get_voltage()
         i = client.get_current()
-        print(f"  Actual: {v:.1f}V, {i:.1f}A")
+        if v and i:
+            print(f"  Actual: {v:.1f}V, {i:.1f}A")
     
     print()
     print("Safe shutdown...")

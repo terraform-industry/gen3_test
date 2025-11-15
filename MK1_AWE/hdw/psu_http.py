@@ -8,7 +8,8 @@ import minimalmodbus
 import yaml
 import time
 import threading
-from flask import Flask, Response
+import queue
+from flask import Flask, Response, request, jsonify
 from pathlib import Path
 
 # Configuration
@@ -22,6 +23,7 @@ app = Flask(__name__)
 latest_data = {}
 device_online = False
 data_lock = threading.Lock()
+command_queue = queue.Queue()
 
 
 def load_config():
@@ -58,8 +60,36 @@ def read_psu_data():
             print(f"✓ Connected to PSU on {com_port}")
             device_online = True
             
-            # Read loop
+            # Read loop with command processing
             while True:
+                # Process pending commands
+                while not command_queue.empty():
+                    try:
+                        cmd = command_queue.get_nowait()
+                        cmd_type = cmd.get('type')
+                        
+                        if cmd_type == 'set_voltage_current':
+                            voltage = cmd['voltage']
+                            current = cmd['current']
+                            psu.write_register(0x0101, int(voltage / 0.1))
+                            time.sleep(0.1)
+                            psu.write_register(0x0102, int(current / 0.1))
+                            time.sleep(0.1)
+                            psu.write_register(0x0103, cmd['enable'])
+                            print(f"✓ Set: {voltage:.1f}V, {current:.1f}A, {'ON' if cmd['enable'] else 'OFF'}")
+                        
+                        elif cmd_type == 'enable':
+                            psu.write_register(0x0103, 1)
+                            print("✓ Output enabled")
+                        
+                        elif cmd_type == 'disable':
+                            psu.write_register(0x0103, 0)
+                            print("✓ Output disabled")
+                        
+                        command_queue.task_done()
+                    except Exception as e:
+                        print(f"✗ Command failed: {e}")
+                
                 # Read all 13 registers at once (0x0001-0x000D)
                 raw_values = psu.read_registers(0x0001, 13)
                 
@@ -148,6 +178,26 @@ def health():
     
     import json
     return Response(json.dumps(response, indent=2), mimetype='application/json')
+
+
+@app.route('/command', methods=['POST'])
+def command():
+    """Accept PSU control commands via HTTP POST"""
+    if not device_online:
+        return jsonify({'success': False, 'error': 'PSU offline'}), 503
+    
+    try:
+        cmd_data = request.get_json()
+        if not cmd_data:
+            return jsonify({'success': False, 'error': 'No JSON data'}), 400
+        
+        # Queue command for execution in read loop
+        command_queue.put(cmd_data)
+        
+        return jsonify({'success': True, 'message': 'Command queued'})
+    
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 def main():
