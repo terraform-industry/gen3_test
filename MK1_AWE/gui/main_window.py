@@ -139,9 +139,11 @@ class MainWindow(QMainWindow):
         if psu_online and 'PSU' not in self.initialized_devices:
             try:
                 from psu_rtu_client import safe_shutdown
-                safe_shutdown()
-                print("PSU initialized to safe state (0V, 0A, OFF)")
-                self.initialized_devices.add('PSU')
+                if safe_shutdown():
+                    print("PSU initialized to safe state (0V, 0A, OFF)")
+                    self.initialized_devices.add('PSU')
+                else:
+                    print("PSU initialization failed (command rejected)")
             except Exception as e:
                 print(f"Error initializing PSU to safe state: {e}")
         elif not psu_online and 'PSU' in self.initialized_devices:
