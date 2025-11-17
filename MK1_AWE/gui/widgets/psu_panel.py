@@ -25,6 +25,7 @@ class PSUPanel(QWidget):
         
         # Track contactor state for interlock
         self.contactor_closed = False
+        self.psu_available = False
         self.current_setpoint = 0.0
         self.is_ramping = False
         self.is_profiling = False
@@ -239,6 +240,9 @@ class PSUPanel(QWidget):
             self.ramp_button.setObjectName("ramp_button")
         if self.profile_button:
             self.profile_button.setObjectName("profile_button")
+        
+        # Initialize button states (start disabled)
+        self._update_button_states()
     
     def _apply_settings(self):
         """Apply PSU settings"""
@@ -385,23 +389,24 @@ class PSUPanel(QWidget):
     def set_hardware_available(self, psu_count):
         """Enable/disable PSU controls based on PSU availability"""
         # Enable if at least one PSU is online
-        enabled = psu_count > 0
+        self.psu_available = psu_count > 0
         
-        # Enable inputs (mode-aware)
+        # Enable inputs
         if self.voltage_input:
-            self.voltage_input.setEnabled(enabled)
-        self.current_input.setEnabled(enabled)
+            self.voltage_input.setEnabled(self.psu_available)
+        self.current_input.setEnabled(self.psu_available)
         
+        # Update button states
         self._update_button_states()
     
     def _update_button_states(self):
         """Update Enter/Stop/Ramp/Profile button states based on interlocks"""
-        # Gen3: No contactor interlock
+        # Gen3: No contactor interlock, only PSU availability
         if self.mode == 'gen3':
-            interlock_ok = True
+            interlock_ok = self.psu_available
         else:
-            # Gen2/MK1: Requires contactor closed
-            interlock_ok = self.contactor_closed
+            # Gen2/MK1: Requires contactor closed and PSU available
+            interlock_ok = self.contactor_closed and self.psu_available
         
         # Enter: Requires interlock OK, not ramping, not profiling
         self.enter_button.setEnabled(interlock_ok and not self.is_ramping and not self.is_profiling)
@@ -414,8 +419,8 @@ class PSUPanel(QWidget):
         if self.profile_button:
             self.profile_button.setEnabled(interlock_ok and not self.is_ramping and not self.is_profiling)
         
-        # Stop: Always enabled (to allow emergency stop)
-        self.stop_button.setEnabled(True)
+        # Stop: Enabled if PSU available (to allow emergency stop)
+        self.stop_button.setEnabled(self.psu_available)
     
     def _start_ramp(self):
         """Start discrete step ramp from 0A to max current (non-blocking)"""

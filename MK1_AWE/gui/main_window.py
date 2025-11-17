@@ -76,38 +76,15 @@ class MainWindow(QMainWindow):
         
         main_layout.addLayout(top_layout)
         
-        # Save button (centered)
-        save_button_layout = QHBoxLayout()
-        save_button_layout.addStretch()
-        
-        self.save_button = QPushButton("SAVE DATA")
-        self.save_button.setMinimumHeight(60)
-        self.save_button.setMinimumWidth(200)
-        self.save_button.clicked.connect(self._on_save_clicked)
-        self.save_button.setStyleSheet("""
-            QPushButton {
-                background-color: #9C27B0;
-                color: #ffffff;
-                border: none;
-                border-radius: 8px;
-                font-size: 18px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #7B1FA2;
-            }
-        """)
-        save_button_layout.addWidget(self.save_button)
-        save_button_layout.addStretch()
-        
-        main_layout.addLayout(save_button_layout)
-        
-        # Bottom: Relay panel
+        # Relay panel
         self.relay_panel = RelayPanel()
         main_layout.addWidget(self.relay_panel, 1)
         
         # Connect hardware status changes to control panel availability
         self.hw_status_widget.hardware_status_changed.connect(self._update_control_availability)
+        
+        # Connect save button from hardware status widget
+        self.hw_status_widget.save_clicked.connect(self._on_save_clicked)
         
         # Start background worker to refresh status every 5 seconds
         self.status_timer = QTimer(self)

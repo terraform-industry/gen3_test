@@ -90,6 +90,7 @@ class StatusWorker(QThread):
 
 class HardwareStatusWidget(QWidget):
     hardware_status_changed = Signal(dict)
+    save_clicked = Signal()  # Signal when save button clicked
     
     def __init__(self):
         super().__init__()
@@ -106,6 +107,29 @@ class HardwareStatusWidget(QWidget):
             indicator = self._create_status_indicator(name)
             self.status_labels[name] = indicator
             layout.addWidget(indicator)
+        
+        layout.addSpacing(15)
+        
+        # Save button (subtle, at bottom of status section)
+        from PySide6.QtWidgets import QPushButton
+        self.save_button = QPushButton("Save Data...")
+        self.save_button.clicked.connect(self.save_clicked.emit)
+        self.save_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4a4a4a;
+                color: #9C27B0;
+                border: 1px solid #666666;
+                border-radius: 4px;
+                padding: 8px 12px;
+                font-size: 12px;
+                font-weight: normal;
+            }
+            QPushButton:hover {
+                background-color: #555555;
+                border: 1px solid #9C27B0;
+            }
+        """)
+        layout.addWidget(self.save_button)
         
         layout.addStretch()
         
