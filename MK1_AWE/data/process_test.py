@@ -31,7 +31,7 @@ def run_export():
     result = subprocess.run([sys.executable, str(export_script)])
     
     if result.returncode != 0:
-        print("\n✗ CSV export failed")
+        print("\n[ERROR] CSV export failed")
         sys.exit(1)
     
     print()
@@ -48,7 +48,7 @@ def run_plotting():
     result = subprocess.run([sys.executable, str(plot_script)])
     
     if result.returncode != 0:
-        print("\n✗ Plotting failed")
+        print("\n[ERROR] Plotting failed")
         sys.exit(1)
     
     print()
@@ -122,7 +122,7 @@ def main():
     run_plotting()
     
     print("=" * 70)
-    print("✓ PROCESSING COMPLETE")
+    print("[OK] PROCESSING COMPLETE")
     print("=" * 70)
     print()
     print(f"Output directory: {output_dir.name}/")
