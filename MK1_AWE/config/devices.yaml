@@ -35,7 +35,7 @@ devices:
 
   BGA03:
     protocol: "rs422_usb"
-    com_port: ""  # TBD - Not connected yet
+    com_port: "COM10"
     baud_rate: 9600
     http_port: 8890
     device_id: "BGA03"
