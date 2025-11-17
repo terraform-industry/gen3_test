@@ -135,17 +135,10 @@ class MainWindow(QMainWindow):
         psu_count = 1 if psu_online else 0
         self.psu_panel.set_hardware_available(psu_count)
         
-        # Initialize PSU to safe state on first connection
+        # Track PSU connection (but don't auto-initialize - user controls it)
         if psu_online and 'PSU' not in self.initialized_devices:
-            try:
-                from psu_rtu_client import safe_shutdown
-                if safe_shutdown():
-                    print("PSU initialized to safe state (0V, 0A, OFF)")
-                    self.initialized_devices.add('PSU')
-                else:
-                    print("PSU initialization failed (command rejected)")
-            except Exception as e:
-                print(f"Error initializing PSU to safe state: {e}")
+            self.initialized_devices.add('PSU')
+            print("PSU online - user can control via GUI")
         elif not psu_online and 'PSU' in self.initialized_devices:
             self.initialized_devices.discard('PSU')
         

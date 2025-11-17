@@ -57,8 +57,7 @@ def read_psu_data():
             psu.serial.timeout = psu_config['timeout']
             psu.close_port_after_each_call = True  # Essential for USB adapters
             
-            print(f"✓ Connected to PSU on {com_port}")
-            device_online = True
+            print(f"Attempting connection to PSU on {com_port}...")
             
             # Read loop with command processing
             while True:
@@ -92,6 +91,11 @@ def read_psu_data():
                 
                 # Read all 13 registers at once (0x0001-0x000D)
                 raw_values = psu.read_registers(0x0001, 13)
+                
+                # Mark as online only after successful read
+                if not device_online:
+                    print(f"✓ Connected to PSU on {com_port}")
+                    device_online = True
                 
                 # Parse registers according to map
                 readings = {
