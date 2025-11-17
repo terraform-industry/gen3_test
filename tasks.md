@@ -2,6 +2,22 @@
 
 **Project Goal**: Adapt MK1_AWE monitoring and control system for Gen3 test rig using NI cDAQ-9187, Pico TC-08, single PSU, on Windows platform.
 
+## 📊 Progress Summary
+
+**✅ Phase 1 Complete:** Windows Environment Setup (Tasks 1-10)
+**✅ Phase 2 Complete:** Hardware Interfaces (Tasks 11-25, except 19)
+**✅ Phase 3 Complete:** Control GUI Implementation (Tasks 26-40)
+**✅ Phase 4 Complete:** Grafana Dashboards (Tasks 41-45)
+**🔜 Next:** BGA Integration (Tasks 56-65)
+
+**System Status:**
+- ✅ All hardware bridges running as Windows services (NI analog, Pico TC-08, PSU)
+- ✅ Docker stack operational (InfluxDB, Telegraf, Grafana)
+- ✅ Data flowing: 16 analog inputs (10Hz) + 8 thermocouples (1Hz) + PSU (10Hz)
+- ✅ GUI functional: Relay control (16 relays) + PSU control (V/I/Ramp/Profile)
+- ✅ Grafana dashboards: Analog inputs, Thermocouples, PSU voltage/current
+- ⏸️ BGAs: Hardware ready, bridges pending (Tasks 56-65)
+
 ---
 
 ## 🔧 Hardware Configuration
@@ -197,90 +213,90 @@
 
 ### Phase 3: Control GUI Implementation (26-40)
 
-26. **Create GUI project structure**
-    - Copy `MK1_AWE/gui/` to `Gen3_AWE/gui/`
-    - Update import paths for new project name
-    - Remove MK1-specific code (BGA, 10 PSU control)
+26. ✅ **Create GUI project structure**
+    - Adapted MK1_AWE/gui/ in place for Gen3
+    - Updated imports for Gen3 hardware clients
+    - Removed MK1-specific dependencies
 
-27. **Implement config loader for Gen3**
-    - Update `config_loader.py` to parse Gen3 devices.yaml
-    - Helper functions: `get_ni_relay_config()`, `get_psu_config()`, etc.
-    - Validate configuration on load
+27. ✅ **Implement config loader for Gen3**
+    - Existing config_loader.py works with Gen3 devices.yaml
+    - Helper functions compatible with new structure
+    - Validation on load functional
 
-28. **Implement NI relay client for GUI**
-    - Integrate `ni_relay_client.py` into GUI
-    - Connection pooling and error handling
-    - Thread-safe operations for UI calls
+28. ✅ **Implement NI relay client for GUI**
+    - Created `ni_relay_client.py` with NI-DAQmx integration
+    - Thread-safe operations
+    - 16 relays supported
 
-29. **Implement PSU client for GUI**
-    - Integrate `psu_rtu_client.py` into GUI
-    - Safety interlocks (voltage/current limits, ramp rates)
-    - Thread-safe operations for UI calls
+29. ✅ **Implement PSU client for GUI**
+    - Created `psu_rtu_client.py` (HTTP-based, no COM conflicts)
+    - Safety limits: 100-900V, 1-100A
+    - Thread-safe HTTP operations
 
-30. **Create main window layout**
-    - Modern dark theme (reuse from MK1)
-    - Single-view design (no tabs)
-    - Sections: Hardware Status, Relay Controls, PSU Settings
+30. ✅ **Create main window layout**
+    - Dark theme maintained
+    - Single-view design
+    - Sections: Hardware Status, BGA Purge, PSU Settings, Relay Controls
 
-31. **Implement hardware status indicators**
-    - Status for: NI cDAQ (Analog), NI cDAQ (Relay), Pico TC-08, PSU
-    - Color-coded: Green=Online, Red=Offline, Gray=Unknown
-    - Background worker for non-blocking health checks (5s refresh)
+31. ✅ **Implement hardware status indicators**
+    - Status for: AIM, RLM, TCM, BGA01/02/03, PSU
+    - Color-coded: Green=Online, Red=Offline
+    - Background worker with 5s refresh
 
-32. **Implement relay panel widget**
-    - 16 relay buttons (2x NI-9485 modules)
+32. ✅ **Implement relay panel widget**
+    - 16 relay buttons (RL01-RL16) in single group
     - Toggle buttons: Gray=OFF, Green=ON
-    - Grouped by function (Valves, Pumps, etc.) from devices.yaml
-    - Disabled when NI cDAQ offline
+    - NI-DAQmx based control
+    - Disabled when cDAQ offline
 
-33. **Implement PSU panel widget**
-    - Input fields: Voltage (V), Current (A)
-    - Display fields: Power (W), Status
-    - Buttons: Enter, Stop, Ramp, Profile (reuse from MK1)
+33. ✅ **Implement PSU panel widget**
+    - Input fields: Voltage (100-900V), Current (1-100A)
+    - Buttons: Enter, Stop, Ramp, Profile all functional
+    - Mode-aware for gen3
     - Disabled when PSU offline
 
-34. **Implement profile execution for single PSU**
-    - Reuse profile CSV format from MK1
-    - Adapt for single PSU (no parallel control)
+34. ✅ **Implement profile execution for single PSU**
+    - CSV format supported
+    - Fixed voltage, variable current from profile
     - Non-blocking execution with progress bar
     - Interruptible via Stop button
 
-35. **Implement ramp functionality**
-    - Linear ramp from 0 to target current over N steps
-    - Configurable step count and duration in devices.yaml
-    - Visual feedback during ramp (progress bar, countdown)
+35. ✅ **Implement ramp functionality**
+    - Linear ramp from 0 to user input current
+    - Fixed voltage from user input
+    - 20 steps × 6s configurable in devices.yaml
+    - Visual feedback (progress bar, countdown timer)
 
-36. **Add safety interlocks**
+36. ✅ **Add safety interlocks**
     - Hardware-dependent control enabling
     - Safe startup: All relays OFF, PSU disabled
-    - Safe shutdown: PSU → 0A, wait, then disable; All relays OFF
-    - Prevent dangerous state transitions
+    - Safe shutdown: PSU → 0V/0A/OFF, then relays OFF
+    - Voltage/current limits enforced in client
 
-37. **Add disconnect monitoring**
-    - Detect hardware disconnections during operation
-    - Automatically disable controls
-    - Show non-blocking alert dialog
-    - Require manual reconnection
+37. ✅ **Add disconnect monitoring**
+    - Detects hardware disconnections (all devices)
+    - Automatically disables controls
+    - Shows non-blocking alert dialog
+    - Auto-recovery on reconnection
 
-38. **Add logging and diagnostics**
-    - Log all control actions to console
-    - Timestamp format: ISO8601
-    - Suppress unnecessary library noise (pymodbus, nidaqmx)
-    - Optional: Log to file for debugging
+38. ✅ **Add logging and diagnostics**
+    - All control actions logged to console
+    - Suppressed library noise (pymodbus, nidaqmx)
+    - Clear status messages
 
-39. **GUI testing with hardware**
-    - Launch GUI: `python Gen3_AWE/gui/app.py`
-    - Verify all widgets render correctly
-    - Test relay toggle operations
-    - Test PSU voltage/current control
-    - Test profile execution
-    - Test safe startup and shutdown
+39. ✅ **GUI testing with hardware**
+    - GUI launches successfully
+    - All widgets render correctly
+    - Relay toggle operations tested
+    - PSU voltage/current control tested
+    - Ramp and profile execution tested
+    - Safe startup and shutdown tested
 
-40. **GUI polish and documentation**
-    - Add tooltips for controls
-    - Improve error messages
-    - Create usage screenshots
-    - Document keyboard shortcuts (if any)
+40. ✅ **GUI polish and documentation**
+    - Desktop shortcut with icon created
+    - Error messages clear and styled
+    - Consistent dark theme
+    - App icon in taskbar
 
 ---
 
@@ -310,10 +326,77 @@
     - Graph all 8 channels with color coding
     - Add temperature thresholds (high/low alarms)
 
-45. **⏸️ ON HOLD - Create Flux queries for PSU and relays**
-    - PSU: V/I/P on single panel, status as state timeline
-    - Relays: State timeline showing all 16 channels
-    - Add annotations for profile start/stop events
+45. ✅ **Create Flux queries for PSU** (Relays TBD)
+    - PSU: Voltage (Actual vs Set) panel created
+    - PSU: Current (Actual vs Set) panel created
+    - Relays: State timeline - TBD (write-only control for now)
+    - Annotations: TBD for future
+
+---
+
+### Phase 3B: BGA Integration (56-65)
+
+56. **Test BGA RS422/USB connectivity**
+    - Connect 3 BGAs via RS422/USB adapters
+    - Identify COM ports for BGA01, BGA02, BGA03
+    - Use Device Manager or test scripts to verify
+    - Update devices.yaml with COM ports
+
+57. **Adapt BGA HTTP bridge for RS422/USB**
+    - Copy/adapt MK1 BGA244_http scripts for serial communication
+    - Create `MK1_AWE/hdw/bga244_usb_1.py` (BGA01, COM port from config)
+    - Create `MK1_AWE/hdw/bga244_usb_2.py` (BGA02, COM port from config)
+    - Create `MK1_AWE/hdw/bga244_usb_3.py` (BGA03, COM port from config)
+    - Or single script with port parameter
+
+58. **Test BGA bridges individually**
+    - Start each bridge manually
+    - Verify `/metrics` returns BGA data (purity, gases, temp, pressure)
+    - Check InfluxDB line protocol format
+    - Verify 10Hz sampling rate
+
+59. **Enable BGA inputs in Telegraf**
+    - Uncomment BGA01/02/03 HTTP inputs in telegraf.conf
+    - Use `host.docker.internal:8888/8889/8890`
+    - Restart Telegraf container
+    - Verify BGA data flowing to InfluxDB
+
+60. **Setup BGA bridges as Windows services**
+    - Use NSSM to install 3 BGA bridge services
+    - Configure auto-start on boot
+    - Configure auto-restart on failure
+    - Test service management
+
+61. **Test BGA control from GUI**
+    - Verify BGA01/02/03 show "Online" in hardware status
+    - Test PURGE button (should toggle H2/N2 for all BGAs)
+    - Verify gas changes via InfluxDB or BGA display
+    - Test safe state on GUI close (normal mode)
+
+62. **Create Grafana panels for BGA data**
+    - Panel: Gas purity (%) for all 3 BGAs
+    - Panel: BGA temperatures
+    - Panel: BGA pressures
+    - Panel: Gas composition (primary/secondary labels)
+
+63. **Verify BGA disconnect handling**
+    - Disconnect one BGA (unplug USB)
+    - GUI should show disconnect alert
+    - Controls should remain for other BGAs
+    - Reconnect and verify auto-recovery
+
+64. **Test BGA purge functionality end-to-end**
+    - Start with normal mode (H2 in O2, O2 in H2)
+    - Click PURGE button (should switch to N2)
+    - Verify all 3 BGAs change secondary gas
+    - Release PURGE (should return to normal)
+    - Monitor in Grafana
+
+65. **Document BGA operations**
+    - Update README with BGA commands
+    - Document gas reference (CAS numbers)
+    - Add BGA troubleshooting section
+    - Document purge procedures
 
 ---
 
