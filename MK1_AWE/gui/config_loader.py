@@ -101,21 +101,40 @@ def get_sensor_conversions():
     """Get analog input sensor conversion parameters.
     
     Returns:
-        dict: Channel-specific conversion configs for AI01-AI08
+        dict: Channel-specific conversion configs for Gen3 analog inputs
     """
     config = load_config()
-    aim_channels = config['modules']['AIM_8ch']['channels']
     
+    # Gen3: Read from NI_cDAQ_Analog (slot_1 and slot_4)
     conversions = {}
-    for channel_id, channel_config in aim_channels.items():
-        conversions[channel_id] = {
-            'min_mA': channel_config['range_min'],
-            'max_mA': channel_config['range_max'],
-            'min_eng': channel_config['eng_min'],
-            'max_eng': channel_config['eng_max'],
-            'unit': channel_config['eng_unit'],
-            'label': channel_config['sensor_name']
-        }
+    
+    try:
+        ni_analog = config['modules']['NI_cDAQ_Analog']
+        
+        # Slot 1 channels (AI01-AI08)
+        for channel_id, channel_config in ni_analog.get('slot_1', {}).items():
+            conversions[channel_id] = {
+                'min_mA': channel_config['range_min'] * 1000,  # Convert A to mA
+                'max_mA': channel_config['range_max'] * 1000,
+                'min_eng': channel_config['eng_min'],
+                'max_eng': channel_config['eng_max'],
+                'unit': channel_config['eng_unit'],
+                'label': channel_config['name']
+            }
+        
+        # Slot 4 channels (AI09-AI16)
+        for channel_id, channel_config in ni_analog.get('slot_4', {}).items():
+            conversions[channel_id] = {
+                'min_mA': channel_config['range_min'] * 1000,
+                'max_mA': channel_config['range_max'] * 1000,
+                'min_eng': channel_config['eng_min'],
+                'max_eng': channel_config['eng_max'],
+                'unit': channel_config['eng_unit'],
+                'label': channel_config['name']
+            }
+    except KeyError:
+        # Fallback: Return empty dict if Gen3 structure not found
+        pass
     
     return conversions
 
