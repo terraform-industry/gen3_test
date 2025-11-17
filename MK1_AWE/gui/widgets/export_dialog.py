@@ -187,7 +187,8 @@ class ExportDialog(QDialog):
     
     def _update_test_config(self, test_name, start_time, end_time):
         """Update test_config.py with new values"""
-        config_path = Path(__file__).parent.parent / "data" / "test_config.py"
+        # Path: widgets/ -> gui/ -> MK1_AWE/ -> data/test_config.py
+        config_path = Path(__file__).parent.parent.parent / "data" / "test_config.py"
         
         # Read current file
         with open(config_path, 'r') as f:
