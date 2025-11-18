@@ -6,59 +6,59 @@
 # Edit: label, sensor_type, eng_min/max, eng_unit
 analog_inputs:
   AI01:
-    label: "AI01"
-    sensor_type: "current"
+    label: "H2 Pressure"
+    sensor_type: "pressure"
     eng_min: 0.0
-    eng_max: 100.0
-    eng_unit: "units"
+    eng_max: 1.01055
+    eng_unit: "psi"
   AI02:
-    label: "AI02"
-    sensor_type: "current"
+    label: "O2 Pressure"
+    sensor_type: "pressure"
     eng_min: 0.0
-    eng_max: 100.0
-    eng_unit: "units"
+    eng_max: 1.01055
+    eng_unit: "psi"
   AI03:
-    label: "AI03"
+    label: "Measured Current"
     sensor_type: "current"
     eng_min: 0.0
-    eng_max: 100.0
-    eng_unit: "units"
+    eng_max: 150.0
+    eng_unit: "A"
   AI04:
-    label: "AI04"
-    sensor_type: "current"
+    label: "H2 Pressure (dP PT)"
+    sensor_type: "pressure"
     eng_min: 0.0
-    eng_max: 100.0
-    eng_unit: "units"
+    eng_max: 1.01055
+    eng_unit: "psi"
   AI05:
-    label: "AI05"
-    sensor_type: "current"
+    label: "O2 Pressure (dP PT)"
+    sensor_type: "pressure"
     eng_min: 0.0
-    eng_max: 100.0
-    eng_unit: "units"
+    eng_max: 1.01055
+    eng_unit: "psi"
   AI06:
-    label: "AI06"
-    sensor_type: "current"
+    label: "H2 BoP Pressure (Sample Tee)"
+    sensor_type: "pressure"
     eng_min: 0.0
-    eng_max: 100.0
-    eng_unit: "units"
+    eng_max: 1.01055
+    eng_unit: "psi"
   AI07:
-    label: "AI07"
-    sensor_type: "current"
+    label: "H2 Flowrate"
+    sensor_type: "flow"
     eng_min: 0.0
-    eng_max: 100.0
-    eng_unit: "units"
+    eng_max: 120
+    eng_unit: "SLM"
   AI08:
-    label: "AI08"
-    sensor_type: "current"
+    label: "PT06"
+    sensor_type: "pressure"
     eng_min: 0.0
-    eng_max: 100.0
-    eng_unit: "units"
+    eng_max: 1.01055
+    eng_unit: "psi"
   AI09:
-    label: "AI09"
-    sensor_type: "current"
+    label: "Measured Voltage"
+    sensor_type: "voltage"
     eng_min: 0.0
-    eng_max: 100.0
-    eng_unit: "units"
+    eng_max: 500
+    eng_unit: "V"
   AI10:
     label: "AI10"
     sensor_type: "current"
@@ -105,24 +105,24 @@ analog_inputs:
 # Thermocouples (8 channels)
 # Just labels for now (K-type defined in devices.yaml)
 thermocouples:
-  TC01: "TC01"
-  TC02: "TC02"
-  TC03: "TC03"
-  TC04: "TC04"
-  TC05: "TC05"
-  TC06: "TC06"
-  TC07: "TC07"
-  TC08: "TC08"
+  TC01: "Electrolyte Temperature"
+  TC02: "H2 Header Temperature"
+  TC03: "O2 Hubbler Temperature"
+  TC04: "H2 HX Outlet Temperature"
+  TC05: "H2 BoP Gas Line Temperature"
+  TC06: "Deoxo Top Temperature"
+  TC07: "Deoxo Bottom Temperature"
+  TC08: "Post-Condensing Coil Temperature"
 
 # Relays (16 channels)
 # Just labels for now
 relays:
   RL01: "RL01"
-  RL02: "RL02"
+  RL02: "H2 Purge"
   RL03: "RL03"
-  RL04: "RL04"
+  RL04: "O2 Purge"
   RL05: "RL05"
-  RL06: "RL06"
+  RL06: "Deoxo"
   RL07: "RL07"
   RL08: "RL08"
   RL09: "RL09"
@@ -138,19 +138,19 @@ relays:
 # Gas configuration (CAS numbers for primary/secondary/purge)
 bgas:
   BGA01:
-    label: "BGA01"
+    label: "H2 Purity"
     gases:
       primary: "1333-74-0"    # H2
       secondary: "7782-44-7"  # O2
       purge: "7727-37-9"      # N2
   BGA02:
-    label: "BGA02"
+    label: "O2 Purity"
     gases:
       primary: "7782-44-7"    # O2
       secondary: "1333-74-0"  # H2
       purge: "7727-37-9"      # N2
   BGA03:
-    label: "BGA03"
+    label: "Deoxo Purity"
     gases:
       primary: "1333-74-0"    # H2
       secondary: "7782-44-7"  # O2
