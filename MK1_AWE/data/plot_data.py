@@ -121,7 +121,7 @@ def plot_analog_inputs(test_dir, plots_dir, purge_periods, active_periods):
     ax.set_ylim(0, 25)
     ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=8, frameon=False)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=4, fontsize=8, frameon=False)
     
     # Format x-axis
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
@@ -205,7 +205,7 @@ def plot_temperatures(test_dir, plots_dir, purge_periods, active_periods):
     if time_range:
         ax.set_xlim(time_range[0], time_range[1])
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8, frameon=False)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
     
     # Format x-axis
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
@@ -282,7 +282,7 @@ def plot_gas_purity(test_dir, plots_dir, purge_periods, active_periods, ylim=(0,
     if time_range:
         ax.set_xlim(time_range[0], time_range[1])
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8, frameon=False)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
     
     # Format x-axis
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
@@ -337,7 +337,7 @@ def plot_cell_voltages(test_dir, plots_dir, purge_periods, active_periods):
     ax.set_ylim(0, 20)
     ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8, frameon=False)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
     
     # Format x-axis
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
@@ -379,7 +379,7 @@ def plot_pressures(test_dir, plots_dir, purge_periods, active_periods):
     ax.set_ylim(0, 1)
     ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8, frameon=False)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
     
     # Format x-axis
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
@@ -432,7 +432,7 @@ def plot_current(test_dir, plots_dir, purge_periods, active_periods):
     ax.set_ylim(0, 120)
     ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8, frameon=False)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
     
     # Format x-axis
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
@@ -474,7 +474,7 @@ def plot_flowrates(test_dir, plots_dir, purge_periods, active_periods):
     ax.set_ylim(0, 10)
     ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8, frameon=False)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
     
     # Format x-axis
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
@@ -521,7 +521,7 @@ def plot_pressures(test_dir, plots_dir, purge_periods, active_periods):
     ax.set_ylim(0, 1.5)
     ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8, frameon=False)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
     
     # Format x-axis
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
@@ -568,7 +568,7 @@ def plot_flowrates(test_dir, plots_dir, purge_periods, active_periods):
     ax.set_ylim(0, 100)
     ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8, frameon=False)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
     
     # Format x-axis
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
@@ -628,7 +628,7 @@ def plot_current(test_dir, plots_dir, purge_periods, active_periods):
     if time_range:
         ax.set_xlim(time_range[0], time_range[1])
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8, frameon=False)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
     
     # Format x-axis
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
@@ -688,7 +688,7 @@ def plot_voltage(test_dir, plots_dir, purge_periods, active_periods):
     if time_range:
         ax.set_xlim(time_range[0], time_range[1])
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8, frameon=False)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
     
     # Format x-axis
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
