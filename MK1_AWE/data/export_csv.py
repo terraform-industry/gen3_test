@@ -32,7 +32,7 @@ import pandas as pd
 
 # InfluxDB Connection (reads from parent config/devices.yaml)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'gui'))
-from config_loader import get_influx_params
+from config_loader import get_influx_params, load_sensor_labels
 
 
 # Removed convert_mA_to_eng - not needed for raw data export
@@ -40,7 +40,7 @@ from config_loader import get_influx_params
 
 def export_sensor_group(client, influx_params, output_dir, date_str, 
                         measurement, channels, downsample_window, filename_suffix, 
-                        field_name=None, use_channel_tag=False):
+                        field_name=None, use_channel_tag=False, use_labels=False):
     """Export a group of related sensors to a single CSV
     
     Args:
@@ -48,6 +48,7 @@ def export_sensor_group(client, influx_params, output_dir, date_str,
         channels: List of channel names
         field_name: Field to extract (if using channel tags), e.g., 'raw_ma', 'temp_c'
         use_channel_tag: If True, filter by channel tag instead of field name
+        use_labels: If True, rename columns using sensor_labels.yaml
     """
     
     if use_channel_tag and field_name:
@@ -92,6 +93,29 @@ from(bucket: "{influx_params['bucket']}")
         df['_time'] = df['_time'].dt.strftime('%Y-%m-%d %H:%M:%S.%f').str[:-3]
         df.rename(columns={'_time': 'timestamp'}, inplace=True)
         
+        # Rename columns using sensor labels if requested
+        if use_labels:
+            labels = load_sensor_labels()
+            
+            # Build rename mapping
+            rename_map = {}
+            for col in df.columns:
+                if col == 'timestamp':
+                    continue
+                
+                # Try different label sources
+                if col in labels.get('analog_inputs', {}):
+                    label_config = labels['analog_inputs'][col]
+                    rename_map[col] = label_config.get('label', col) if isinstance(label_config, dict) else label_config
+                elif col in labels.get('thermocouples', {}):
+                    rename_map[col] = labels['thermocouples'][col]
+                elif col in labels.get('bgas', {}):
+                    label_config = labels['bgas'][col]
+                    rename_map[col] = label_config.get('label', col) if isinstance(label_config, dict) else label_config
+            
+            if rename_map:
+                df.rename(columns=rename_map, inplace=True)
+        
         # Save to CSV with proper float formatting
         output_file = f"{date_str}_{filename_suffix}.csv"
         output_path = os.path.join(output_dir, output_file)
@@ -116,6 +140,10 @@ def export_bga_data(client, influx_params, output_dir, date_str, downsample_wind
     """Export BGA data with multiple fields per device"""
     
     print(f"\nExporting BGA data...")
+    
+    # Load labels for BGA naming
+    labels = load_sensor_labels()
+    bga_labels = labels.get('bgas', {})
     
     try:
         # Export each BGA separately to avoid duplicate rows
@@ -157,8 +185,10 @@ from(bucket: "{influx_params['bucket']}")
             df_pivot['_time'] = df_pivot['_time'].dt.strftime('%Y-%m-%d %H:%M:%S.%f').str[:-3]
             df_pivot.rename(columns={'_time': 'timestamp'}, inplace=True)
             
-            # Save to CSV with proper float formatting
-            output_file = f"{date_str}_BGA_{bga_id}.csv"
+            # Save to CSV with proper float formatting (use label in filename if available)
+            bga_label_config = bga_labels.get(bga_id, {})
+            bga_label = bga_label_config.get('label', bga_id) if isinstance(bga_label_config, dict) else bga_id
+            output_file = f"{date_str}_BGA_{bga_label.replace(' ', '_')}.csv"
             output_path = os.path.join(output_dir, output_file)
             df_pivot.to_csv(output_path, index=False, float_format='%.6f')
             
@@ -215,13 +245,13 @@ def export_data():
         # Export analog inputs (AI01-AI16) - converted engineering units
         export_sensor_group(client, influx_params, output_dir, date_str,
                           "ni_analog", ai_channels, DOWNSAMPLE_AIX, "AIX_converted",
-                          field_name="value", use_channel_tag=True)
+                          field_name="value", use_channel_tag=True, use_labels=True)
         
         # Export thermocouples (TC01-TC08) from tc08 measurement
         tc_channels = [f"TC{i:02d}" for i in range(1, 9)]
         export_sensor_group(client, influx_params, output_dir, date_str,
                           "tc08", tc_channels, DOWNSAMPLE_TC, "TC",
-                          field_name="temp_c", use_channel_tag=True)
+                          field_name="temp_c", use_channel_tag=True, use_labels=True)
         
         # Export relays (RL01-RL16) from ni_relays measurement
         rl_fields = [f"RL{i:02d}" for i in range(1, 17)]

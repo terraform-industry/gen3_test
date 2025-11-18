@@ -7,9 +7,17 @@ import matplotlib.dates as mdates
 from pathlib import Path
 import os
 import numpy as np
+import sys
 
 # Import configuration from single source of truth
 from test_config import PLOT_DPI, PLOT_FORMAT, FIGURE_SIZE
+
+# Import sensor labels
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'gui'))
+from config_loader import load_sensor_labels
+
+# Load labels once for all plots
+SENSOR_LABELS = load_sensor_labels()
 
 # Which test directory to plot (auto-detects latest)
 TEST_DIR = None
@@ -31,7 +39,13 @@ def get_shading_periods(test_dir):
     """Get purge and active periods for plot shading"""
     date_str = test_dir.name.split('_')[0]
     csv_dir = test_dir / 'csv'
-    bga_path = csv_dir / f"{date_str}_BGA_BGA01.csv"
+    
+    # Get BGA01 path using label
+    bga_labels_config = SENSOR_LABELS.get('bgas', {})
+    bga01_config = bga_labels_config.get('BGA01', {})
+    bga01_label = bga01_config.get('label', 'BGA01') if isinstance(bga01_config, dict) else 'BGA01'
+    bga_path = csv_dir / f"{date_str}_BGA_{bga01_label.replace(' ', '_')}.csv"
+    
     psu_path = csv_dir / f"{date_str}_PSU.csv"
     
     purge_periods = []
@@ -126,8 +140,18 @@ def plot_analog_inputs(test_dir, plots_dir, purge_periods, active_periods):
 def plot_temperatures(test_dir, plots_dir, purge_periods, active_periods):
     """Plot thermocouples (TC01-TC08) and BGA temperatures"""
     csv_dir = test_dir / 'csv'
-    tc_path = csv_dir / f"{test_dir.name.split('_')[0]}_TC.csv"
-    bga_paths = [csv_dir / f"{test_dir.name.split('_')[0]}_BGA_BGA{i:02d}.csv" for i in [1,2,3]]
+    date_str = test_dir.name.split('_')[0]
+    tc_path = csv_dir / f"{date_str}_TC.csv"
+    
+    # Build BGA paths using labels from sensor_labels.yaml
+    bga_ids = ['BGA01', 'BGA02', 'BGA03']
+    bga_labels_config = SENSOR_LABELS.get('bgas', {})
+    bga_paths = []
+    for bga_id in bga_ids:
+        bga_config = bga_labels_config.get(bga_id, {})
+        bga_label = bga_config.get('label', bga_id) if isinstance(bga_config, dict) else bga_id
+        filename = f"{date_str}_BGA_{bga_label.replace(' ', '_')}.csv"
+        bga_paths.append(csv_dir / filename)
     
     fig, ax = plt.subplots(figsize=FIGURE_SIZE)
     
@@ -137,14 +161,13 @@ def plot_temperatures(test_dir, plots_dir, purge_periods, active_periods):
     plotted_channels = 0
     time_range = None
     
-    # Plot thermocouples (TC01-TC08, exclude if out of range -200 to +1500°C)
+    # Plot thermocouples (column names are labels from CSV)
     if tc_path.exists():
         df_tc = pd.read_csv(tc_path, parse_dates=['timestamp'])
         time_range = (df_tc['timestamp'].min(), df_tc['timestamp'].max())
         
-        for i in range(1, 9):
-            col = f'TC{i:02d}'
-            if col in df_tc.columns:
+        for col in df_tc.columns:
+            if col != 'timestamp':
                 # Filter out invalid temps
                 valid_temps = (df_tc[col] > -200) & (df_tc[col] < 1500)
                 if valid_temps.any():
@@ -152,15 +175,22 @@ def plot_temperatures(test_dir, plots_dir, purge_periods, active_periods):
                     plotted_channels += 1
     
     # Plot BGA temperatures
-    for idx, bga_path in enumerate(bga_paths, start=1):
+    colors = ['red', 'orange', 'purple']
+    bga_ids = ['BGA01', 'BGA02', 'BGA03']
+    bga_labels_config = SENSOR_LABELS.get('bgas', {})
+    
+    for idx, (bga_id, bga_path) in enumerate(zip(bga_ids, bga_paths)):
         if bga_path.exists():
             df_bga = pd.read_csv(bga_path, parse_dates=['timestamp'])
             if time_range is None:
                 time_range = (df_bga['timestamp'].min(), df_bga['timestamp'].max())
             if 'temperature' in df_bga.columns:
-                colors = ['red', 'orange', 'purple']
+                # Get label
+                bga_config = bga_labels_config.get(bga_id, {})
+                bga_label = bga_config.get('label', bga_id) if isinstance(bga_config, dict) else bga_id
+                
                 ax.plot(df_bga['timestamp'], df_bga['temperature'], 
-                        label=f'BGA{idx:02d}', linewidth=1.5, color=colors[idx-1], linestyle='--')
+                        label=f'{bga_label} Temp', linewidth=1.5, color=colors[idx], linestyle='--')
                 plotted_channels += 1
     
     if plotted_channels == 0:
@@ -194,7 +224,17 @@ def plot_temperatures(test_dir, plots_dir, purge_periods, active_periods):
 def plot_gas_purity(test_dir, plots_dir, purge_periods, active_periods, ylim=(0, 100), suffix=""):
     """Plot BGA purity for all 3 BGAs with period shading"""
     csv_dir = test_dir / 'csv'
-    bga_paths = [csv_dir / f"{test_dir.name.split('_')[0]}_BGA_BGA{i:02d}.csv" for i in [1,2,3]]
+    date_str = test_dir.name.split('_')[0]
+    
+    # Build BGA paths using labels from sensor_labels.yaml
+    bga_ids = ['BGA01', 'BGA02', 'BGA03']
+    bga_labels_config = SENSOR_LABELS.get('bgas', {})
+    bga_paths = []
+    for bga_id in bga_ids:
+        bga_config = bga_labels_config.get(bga_id, {})
+        bga_label = bga_config.get('label', bga_id) if isinstance(bga_config, dict) else bga_id
+        filename = f"{date_str}_BGA_{bga_label.replace(' ', '_')}.csv"
+        bga_paths.append(csv_dir / filename)
     
     fig, ax = plt.subplots(figsize=FIGURE_SIZE)
     
@@ -204,17 +244,24 @@ def plot_gas_purity(test_dir, plots_dir, purge_periods, active_periods, ylim=(0,
     time_range = None
     plotted = 0
     
-    # Plot all BGAs
+    # Plot all BGAs (file names include labels)
     colors = ['blue', 'green', 'purple']
-    for idx, bga_path in enumerate(bga_paths, start=1):
+    bga_ids = ['BGA01', 'BGA02', 'BGA03']
+    bga_labels_config = SENSOR_LABELS.get('bgas', {})
+    
+    for idx, (bga_id, bga_path) in enumerate(zip(bga_ids, bga_paths), start=0):
         if bga_path.exists():
             df_bga = pd.read_csv(bga_path, parse_dates=['timestamp'])
             if time_range is None:
                 time_range = (df_bga['timestamp'].min(), df_bga['timestamp'].max())
             if 'purity' in df_bga.columns:
+                # Get label
+                bga_config = bga_labels_config.get(bga_id, {})
+                bga_label = bga_config.get('label', bga_id) if isinstance(bga_config, dict) else bga_id
+                
                 ax.plot(df_bga['timestamp'], df_bga['purity'], 
-                        label=f'BGA{idx:02d}', linewidth=1.5, marker='.', 
-                        markersize=2, color=colors[idx-1])
+                        label=bga_label, linewidth=1.5, marker='.', 
+                        markersize=2, color=colors[idx])
                 plotted += 1
     
     if plotted == 0:
@@ -456,12 +503,11 @@ def plot_pressures(test_dir, plots_dir, purge_periods, active_periods):
     fig, ax = plt.subplots(figsize=FIGURE_SIZE)
     add_shading(ax, purge_periods, active_periods)
     
-    # Plot pressure channels (AI01, AI02, AI04, AI05, AI06, AI08)
-    pressure_channels = ['AI01', 'AI02', 'AI04', 'AI05', 'AI06', 'AI08']
+    # Plot pressure columns (column names are already labels from CSV)
     plotted = 0
-    for ch in pressure_channels:
-        if ch in df.columns:
-            ax.plot(df['timestamp'], df[ch], label=ch, linewidth=1.5)
+    for col in df.columns:
+        if col != 'timestamp' and 'Pressure' in col:  # Match columns with "Pressure" in name
+            ax.plot(df['timestamp'], df[col], label=col, linewidth=1.5)
             plotted += 1
     
     if plotted == 0:
@@ -501,15 +547,20 @@ def plot_flowrates(test_dir, plots_dir, purge_periods, active_periods):
     
     df = pd.read_csv(csv_path, parse_dates=['timestamp'])
     
-    if 'AI07' not in df.columns:
-        print("  [!] AI07 (flowrate) not found")
-        return
-    
     fig, ax = plt.subplots(figsize=FIGURE_SIZE)
     add_shading(ax, purge_periods, active_periods)
     
-    # Plot H2 flowrate (AI07)
-    ax.plot(df['timestamp'], df['AI07'], label='H2 Flowrate', linewidth=1.5, color='blue')
+    # Plot flowrate columns (column names are already labels from CSV)
+    plotted = 0
+    for col in df.columns:
+        if col != 'timestamp' and 'Flowrate' in col:
+            ax.plot(df['timestamp'], df[col], label=col, linewidth=1.5, color='blue')
+            plotted += 1
+    
+    if plotted == 0:
+        print("  [!] No flowrate data")
+        plt.close()
+        return
     
     ax.set_xlabel('Time')
     ax.set_ylabel('Flowrate [SLM]')
@@ -534,7 +585,7 @@ def plot_flowrates(test_dir, plots_dir, purge_periods, active_periods):
 
 
 def plot_current(test_dir, plots_dir, purge_periods, active_periods):
-    """Plot measured current (AI03) and PSU current"""
+    """Plot measured current and PSU current"""
     aix_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_AIX_converted.csv"
     psu_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_PSU.csv"
     
@@ -544,13 +595,16 @@ def plot_current(test_dir, plots_dir, purge_periods, active_periods):
     time_range = None
     plotted = 0
     
-    # Plot measured current (AI03)
+    # Plot measured current (column name is label from CSV)
     if aix_path.exists():
         df_aix = pd.read_csv(aix_path, parse_dates=['timestamp'])
         time_range = (df_aix['timestamp'].min(), df_aix['timestamp'].max())
-        if 'AI03' in df_aix.columns:
-            ax.plot(df_aix['timestamp'], df_aix['AI03'], label='Measured Current (AI03)', linewidth=1.5, color='blue')
-            plotted += 1
+        # Find current column
+        for col in df_aix.columns:
+            if col != 'timestamp' and 'Current' in col:
+                ax.plot(df_aix['timestamp'], df_aix[col], label=col, linewidth=1.5, color='blue')
+                plotted += 1
+                break
     
     # Plot PSU current
     if psu_path.exists():
@@ -591,7 +645,7 @@ def plot_current(test_dir, plots_dir, purge_periods, active_periods):
 
 
 def plot_voltage(test_dir, plots_dir, purge_periods, active_periods):
-    """Plot measured voltage (AI09) and PSU voltage"""
+    """Plot measured voltage and PSU voltage"""
     aix_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_AIX_converted.csv"
     psu_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_PSU.csv"
     
@@ -601,13 +655,16 @@ def plot_voltage(test_dir, plots_dir, purge_periods, active_periods):
     time_range = None
     plotted = 0
     
-    # Plot measured voltage (AI09)
+    # Plot measured voltage (column name is label from CSV)
     if aix_path.exists():
         df_aix = pd.read_csv(aix_path, parse_dates=['timestamp'])
         time_range = (df_aix['timestamp'].min(), df_aix['timestamp'].max())
-        if 'AI09' in df_aix.columns:
-            ax.plot(df_aix['timestamp'], df_aix['AI09'], label='Measured Voltage (AI09)', linewidth=1.5, color='blue')
-            plotted += 1
+        # Find voltage column
+        for col in df_aix.columns:
+            if col != 'timestamp' and 'Voltage' in col:
+                ax.plot(df_aix['timestamp'], df_aix[col], label=col, linewidth=1.5, color='blue')
+                plotted += 1
+                break
     
     # Plot PSU voltage
     if psu_path.exists():
