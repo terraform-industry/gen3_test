@@ -171,7 +171,7 @@ def plot_temperatures(test_dir, plots_dir, purge_periods, active_periods):
     ax.set_xlabel('Time')
     ax.set_ylabel('Temperature [°C]')
     ax.set_title('Temperatures')
-    ax.set_ylim(0, 100)
+    ax.set_ylim(0, 130)
     if time_range:
         ax.set_xlim(time_range[0], time_range[1])
     ax.grid(True, alpha=0.3)
@@ -443,8 +443,212 @@ def plot_flowrates(test_dir, plots_dir, purge_periods, active_periods):
     print(f"  ✓ Flowrates → {output_path.name}")
 
 
-def plot_psu_data(test_dir, plots_dir):
-    """Plot PSU voltage, current, and power"""
+def plot_pressures(test_dir, plots_dir, purge_periods, active_periods):
+    """Plot pressure sensors from converted data"""
+    csv_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_AIX_converted.csv"
+    
+    if not csv_path.exists():
+        print("  [!] AIX_converted.csv not found")
+        return
+    
+    df = pd.read_csv(csv_path, parse_dates=['timestamp'])
+    
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE)
+    add_shading(ax, purge_periods, active_periods)
+    
+    # Plot pressure channels (AI01, AI02, AI04, AI05, AI06, AI08)
+    pressure_channels = ['AI01', 'AI02', 'AI04', 'AI05', 'AI06', 'AI08']
+    plotted = 0
+    for ch in pressure_channels:
+        if ch in df.columns:
+            ax.plot(df['timestamp'], df[ch], label=ch, linewidth=1.5)
+            plotted += 1
+    
+    if plotted == 0:
+        print("  [!] No pressure data")
+        plt.close()
+        return
+    
+    ax.set_xlabel('Time')
+    ax.set_ylabel('Pressure [PSI]')
+    ax.set_title('Pressures')
+    ax.set_ylim(0, 1.5)
+    ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best')
+    
+    # Format x-axis
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    
+    # Save
+    output_path = plots_dir / f"pressures.{PLOT_FORMAT}"
+    plt.savefig(output_path, dpi=PLOT_DPI, format=PLOT_FORMAT)
+    plt.close()
+    
+    print(f"  [OK] Pressures -> {output_path.name} ({plotted} channels)")
+
+
+def plot_flowrates(test_dir, plots_dir, purge_periods, active_periods):
+    """Plot flowrate sensors from converted data"""
+    csv_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_AIX_converted.csv"
+    
+    if not csv_path.exists():
+        print("  [!] AIX_converted.csv not found")
+        return
+    
+    df = pd.read_csv(csv_path, parse_dates=['timestamp'])
+    
+    if 'AI07' not in df.columns:
+        print("  [!] AI07 (flowrate) not found")
+        return
+    
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE)
+    add_shading(ax, purge_periods, active_periods)
+    
+    # Plot H2 flowrate (AI07)
+    ax.plot(df['timestamp'], df['AI07'], label='H2 Flowrate', linewidth=1.5, color='blue')
+    
+    ax.set_xlabel('Time')
+    ax.set_ylabel('Flowrate [SLM]')
+    ax.set_title('H2 Flowrate')
+    ax.set_ylim(0, 100)
+    ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best')
+    
+    # Format x-axis
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    
+    # Save
+    output_path = plots_dir / f"flowrate.{PLOT_FORMAT}"
+    plt.savefig(output_path, dpi=PLOT_DPI, format=PLOT_FORMAT)
+    plt.close()
+    
+    print(f"  [OK] Flowrate -> {output_path.name}")
+
+
+def plot_current(test_dir, plots_dir, purge_periods, active_periods):
+    """Plot measured current (AI03) and PSU current"""
+    aix_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_AIX_converted.csv"
+    psu_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_PSU.csv"
+    
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE)
+    add_shading(ax, purge_periods, active_periods)
+    
+    time_range = None
+    plotted = 0
+    
+    # Plot measured current (AI03)
+    if aix_path.exists():
+        df_aix = pd.read_csv(aix_path, parse_dates=['timestamp'])
+        time_range = (df_aix['timestamp'].min(), df_aix['timestamp'].max())
+        if 'AI03' in df_aix.columns:
+            ax.plot(df_aix['timestamp'], df_aix['AI03'], label='Measured Current (AI03)', linewidth=1.5, color='blue')
+            plotted += 1
+    
+    # Plot PSU current
+    if psu_path.exists():
+        df_psu = pd.read_csv(psu_path, parse_dates=['timestamp'])
+        if time_range is None:
+            time_range = (df_psu['timestamp'].min(), df_psu['timestamp'].max())
+        if 'current' in df_psu.columns and 'set_current_rb' in df_psu.columns:
+            ax.plot(df_psu['timestamp'], df_psu['current'], label='PSU Actual', linewidth=1.5, color='green')
+            ax.plot(df_psu['timestamp'], df_psu['set_current_rb'], label='PSU Set', linewidth=1.5, color='orange', linestyle='--')
+            plotted += 2
+    
+    if plotted == 0:
+        print("  [!] No current data")
+        plt.close()
+        return
+    
+    ax.set_xlabel('Time')
+    ax.set_ylabel('Current [A]')
+    ax.set_title('Current')
+    ax.set_ylim(0, 120)
+    if time_range:
+        ax.set_xlim(time_range[0], time_range[1])
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best')
+    
+    # Format x-axis
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    
+    # Save
+    output_path = plots_dir / f"current.{PLOT_FORMAT}"
+    plt.savefig(output_path, dpi=PLOT_DPI, format=PLOT_FORMAT)
+    plt.close()
+    
+    print(f"  [OK] Current -> {output_path.name}")
+
+
+def plot_voltage(test_dir, plots_dir, purge_periods, active_periods):
+    """Plot measured voltage (AI09) and PSU voltage"""
+    aix_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_AIX_converted.csv"
+    psu_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_PSU.csv"
+    
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE)
+    add_shading(ax, purge_periods, active_periods)
+    
+    time_range = None
+    plotted = 0
+    
+    # Plot measured voltage (AI09)
+    if aix_path.exists():
+        df_aix = pd.read_csv(aix_path, parse_dates=['timestamp'])
+        time_range = (df_aix['timestamp'].min(), df_aix['timestamp'].max())
+        if 'AI09' in df_aix.columns:
+            ax.plot(df_aix['timestamp'], df_aix['AI09'], label='Measured Voltage (AI09)', linewidth=1.5, color='blue')
+            plotted += 1
+    
+    # Plot PSU voltage
+    if psu_path.exists():
+        df_psu = pd.read_csv(psu_path, parse_dates=['timestamp'])
+        if time_range is None:
+            time_range = (df_psu['timestamp'].min(), df_psu['timestamp'].max())
+        if 'voltage' in df_psu.columns and 'set_voltage_rb' in df_psu.columns:
+            ax.plot(df_psu['timestamp'], df_psu['voltage'], label='PSU Actual', linewidth=1.5, color='green')
+            ax.plot(df_psu['timestamp'], df_psu['set_voltage_rb'], label='PSU Set', linewidth=1.5, color='orange', linestyle='--')
+            plotted += 2
+    
+    if plotted == 0:
+        print("  [!] No voltage data")
+        plt.close()
+        return
+    
+    ax.set_xlabel('Time')
+    ax.set_ylabel('Voltage [V]')
+    ax.set_title('Voltage')
+    ax.set_ylim(0, 320)
+    if time_range:
+        ax.set_xlim(time_range[0], time_range[1])
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best')
+    
+    # Format x-axis
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    
+    # Save
+    output_path = plots_dir / f"voltage.{PLOT_FORMAT}"
+    plt.savefig(output_path, dpi=PLOT_DPI, format=PLOT_FORMAT)
+    plt.close()
+    
+    print(f"  [OK] Voltage -> {output_path.name}")
+
+
+def plot_power(test_dir, plots_dir, purge_periods, active_periods):
+    """Plot PSU power"""
     csv_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_PSU.csv"
     
     if not csv_path.exists():
@@ -453,46 +657,40 @@ def plot_psu_data(test_dir, plots_dir):
     
     df = pd.read_csv(csv_path, parse_dates=['timestamp'])
     
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(FIGURE_SIZE[0], FIGURE_SIZE[1]*1.5), sharex=True)
+    if 'power' not in df.columns:
+        print("  [!] No power data")
+        return
     
-    # Voltage plot (actual vs set)
-    if 'voltage' in df.columns and 'set_voltage_rb' in df.columns:
-        ax1.plot(df['timestamp'], df['voltage'], label='Actual', linewidth=1.5, color='blue')
-        ax1.plot(df['timestamp'], df['set_voltage_rb'], label='Set', linewidth=1.5, color='orange', linestyle='--')
-        ax1.set_ylabel('Voltage [V]')
-        ax1.set_title('PSU Voltage')
-        ax1.grid(True, alpha=0.3)
-        ax1.legend(loc='best')
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE)
+    add_shading(ax, purge_periods, active_periods)
     
-    # Current plot (actual vs set)
-    if 'current' in df.columns and 'set_current_rb' in df.columns:
-        ax2.plot(df['timestamp'], df['current'], label='Actual', linewidth=1.5, color='blue')
-        ax2.plot(df['timestamp'], df['set_current_rb'], label='Set', linewidth=1.5, color='orange', linestyle='--')
-        ax2.set_ylabel('Current [A]')
-        ax2.set_title('PSU Current')
-        ax2.grid(True, alpha=0.3)
-        ax2.legend(loc='best')
+    # Plot power (convert W to kW)
+    ax.plot(df['timestamp'], df['power'] / 1000, linewidth=1.5, color='green')
     
-    # Power plot
-    if 'power' in df.columns:
-        ax3.plot(df['timestamp'], df['power'], linewidth=1.5, color='green')
-        ax3.set_ylabel('Power [W]')
-        ax3.set_title('PSU Power')
-        ax3.set_xlabel('Time')
-        ax3.grid(True, alpha=0.3)
+    ax.set_xlabel('Time')
+    ax.set_ylabel('Power [kW]')
+    ax.set_title('PSU Power')
+    ax.set_ylim(0, 45)
+    ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
+    ax.grid(True, alpha=0.3)
     
     # Format x-axis
-    ax3.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-    ax3.xaxis.set_major_locator(mdates.AutoDateLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
     plt.xticks(rotation=45)
     plt.tight_layout()
     
     # Save
-    output_path = plots_dir / f"psu.{PLOT_FORMAT}"
+    output_path = plots_dir / f"power.{PLOT_FORMAT}"
     plt.savefig(output_path, dpi=PLOT_DPI, format=PLOT_FORMAT)
     plt.close()
     
-    print(f"  [OK] PSU -> {output_path.name}")
+    print(f"  [OK] Power -> {output_path.name}")
+
+
+def plot_psu_data(test_dir, plots_dir):
+    """Deprecated - replaced by individual voltage/current/power plots"""
+    pass
 
 
 def generate_plots():
@@ -525,7 +723,11 @@ def generate_plots():
     # Generate Gen3 plots
     plot_analog_inputs(test_dir, plots_dir, purge_periods, active_periods)
     plot_temperatures(test_dir, plots_dir, purge_periods, active_periods)
-    plot_psu_data(test_dir, plots_dir)
+    plot_pressures(test_dir, plots_dir, purge_periods, active_periods)
+    plot_flowrates(test_dir, plots_dir, purge_periods, active_periods)
+    plot_current(test_dir, plots_dir, purge_periods, active_periods)
+    plot_voltage(test_dir, plots_dir, purge_periods, active_periods)
+    plot_power(test_dir, plots_dir, purge_periods, active_periods)
     plot_gas_purity(test_dir, plots_dir, purge_periods, active_periods, ylim=(0, 100))
     plot_gas_purity(test_dir, plots_dir, purge_periods, active_periods, ylim=(90, 100), suffix="_detail")
     

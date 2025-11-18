@@ -212,6 +212,11 @@ def export_data():
                           "ni_analog", ai_channels, DOWNSAMPLE_AIX, "AIX",
                           field_name="raw_ma", use_channel_tag=True)
         
+        # Export analog inputs (AI01-AI16) - converted engineering units
+        export_sensor_group(client, influx_params, output_dir, date_str,
+                          "ni_analog", ai_channels, DOWNSAMPLE_AIX, "AIX_converted",
+                          field_name="value", use_channel_tag=True)
+        
         # Export thermocouples (TC01-TC08) from tc08 measurement
         tc_channels = [f"TC{i:02d}" for i in range(1, 9)]
         export_sensor_group(client, influx_params, output_dir, date_str,
@@ -240,6 +245,7 @@ def export_data():
         print(f"{'=' * 60}")
         print(f"\nExported files:")
         print(f"  - {date_str}_AIX.csv (16 analog inputs, raw mA)")
+        print(f"  - {date_str}_AIX_converted.csv (16 analog inputs, engineering units)")
         print(f"  - {date_str}_TC.csv (8 thermocouples, C)")
         print(f"  - {date_str}_RL.csv (16 relay states, 1/0)")
         print(f"  - {date_str}_PSU.csv (PSU data)")
