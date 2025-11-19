@@ -21,14 +21,14 @@ devices:
 
   BGA01:
     protocol: "rs422_usb"
-    com_port: "COM8"
+    com_port: "COM3"
     baud_rate: 9600
     http_port: 8888
     device_id: "BGA01"
 
   BGA02:
     protocol: "rs422_usb"
-    com_port: "COM3"
+    com_port: "COM8"
     baud_rate: 9600
     http_port: 8889
     device_id: "BGA02"
