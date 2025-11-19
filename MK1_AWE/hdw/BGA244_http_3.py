@@ -76,6 +76,7 @@ def poll_bga():
                 with command_lock:
                     if command_queue:
                         command = command_queue.pop(0)
+                        print(f"  Sending command: {command}")
                         cmd(ser, command, read=False)
                 
                 # Read all parameters
