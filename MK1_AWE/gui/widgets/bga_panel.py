@@ -97,35 +97,47 @@ class BGAPanel(QWidget):
     
     def initialize_bgas(self):
         """Initialize all BGAs to normal gas configuration (safe state)"""
+        import time
+        
+        # Import BGA client
         try:
-            import time
-            
-            # Import BGA client
-            try:
-                from ..bga_client import set_primary_gas, set_secondary_gas
-            except ImportError:
-                from bga_client import set_primary_gas, set_secondary_gas
-            
-            # BGA01 - set to normal gases
+            from ..bga_client import set_primary_gas, set_secondary_gas
+        except ImportError:
+            from bga_client import set_primary_gas, set_secondary_gas
+        
+        success_count = 0
+        
+        # BGA01
+        try:
             set_primary_gas('BGA01', self.bga01_gases['primary'])
             time.sleep(0.05)
             set_secondary_gas('BGA01', self.bga01_gases['secondary'])
             time.sleep(0.05)
-            
-            # BGA02 - set to normal gases
+            success_count += 1
+        except Exception as e:
+            print(f"  BGA01 init failed: {e}")
+        
+        # BGA02
+        try:
             set_primary_gas('BGA02', self.bga02_gases['primary'])
             time.sleep(0.05)
             set_secondary_gas('BGA02', self.bga02_gases['secondary'])
             time.sleep(0.05)
-            
-            # BGA03 - set to normal gases
+            success_count += 1
+        except Exception as e:
+            print(f"  BGA02 init failed: {e}")
+        
+        # BGA03
+        try:
             set_primary_gas('BGA03', self.bga03_gases['primary'])
             time.sleep(0.05)
             set_secondary_gas('BGA03', self.bga03_gases['secondary'])
-            
-            print("BGAs initialized to normal gas configuration (safe state)")
+            success_count += 1
         except Exception as e:
-            print(f"Error initializing BGAs: {e}")
+            print(f"  BGA03 init failed: {e}")
+        
+        if success_count > 0:
+            print(f"BGAs initialized to normal configuration ({success_count}/3 successful)")
     
     def set_normal_mode(self):
         """Set purge to safe state (valves closed)"""
