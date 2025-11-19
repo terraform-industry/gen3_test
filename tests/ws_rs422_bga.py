@@ -3,7 +3,7 @@ import serial
 import time
 import sys
 
-COM_PORT = "COM8"
+COM_PORT = "COM3"
 BAUD_RATE = 9600
 GASES = {"7782-44-7": "O2", "1333-74-0": "H2", "7727-37-9": "N2"}
 CAS = {v: k for k, v in GASES.items()}
