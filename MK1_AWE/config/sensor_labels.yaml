@@ -109,7 +109,7 @@ thermocouples:
   TC02: "Electrolyte CMS5"
   TC03: "O2 Hubbler Outlet"
   TC04: "H2 Hubbler Outlet"
-  TC05: "NA" - X
+  TC05: "NA"
   TC06: "Deoxo"
   TC07: "Deoxo Outlet"
   TC08: "Post-Condensing Coil"
