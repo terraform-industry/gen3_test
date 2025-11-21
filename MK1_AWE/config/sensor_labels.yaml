@@ -36,7 +36,7 @@ analog_inputs:
     eng_max: 1.01055
     eng_unit: "psi"
   AI06:
-    label: "H2 BoP Pressure (Sample Tee)"
+    label: "H2 Hubbler Outlet"
     sensor_type: "pressure"
     eng_min: 0.0
     eng_max: 1.01055
@@ -120,9 +120,9 @@ relays:
   RL01: "RL01"
   RL02: "RL02"
   RL03: "RL03"
-  RL04: "O2 Purge"
+  RL04: "H2 Purge"
   RL05: "RL05"
-  RL06: "H2 Purge"
+  RL06: "O2 Purge"
   RL07: "RL07"
   RL08: "Deoxo"
   RL09: "RL09"
