@@ -118,13 +118,13 @@ thermocouples:
 # Just labels for now
 relays:
   RL01: "RL01"
-  RL02: "Deoxo"
+  RL02: "RL02"
   RL03: "RL03"
   RL04: "O2 Purge"
   RL05: "RL05"
   RL06: "H2 Purge"
   RL07: "RL07"
-  RL08: "RL08"
+  RL08: "Deoxo"
   RL09: "RL09"
   RL10: "RL10"
   RL11: "RL11"
