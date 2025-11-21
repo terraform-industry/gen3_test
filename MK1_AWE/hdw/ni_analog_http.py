@@ -82,12 +82,14 @@ def read_analog_inputs():
                         name_to_assign_to_channel=ch_name
                     )
                 
-                # Configure timing - use on-demand mode for freshest data
+                # Configure timing
                 task.timing.cfg_samp_clk_timing(
                     rate=SAMPLE_RATE,
-                    sample_mode=nidaqmx.constants.AcquisitionType.FINITE,
-                    samps_per_chan=1
+                    sample_mode=nidaqmx.constants.AcquisitionType.CONTINUOUS
                 )
+                
+                # Minimal buffer - only 0.5 seconds worth
+                task.in_stream.input_buf_size = int(SAMPLE_RATE * 16 * 0.5)
                 
                 print(f"✓ Connected to {device_name}")
                 device_online = True
@@ -130,7 +132,8 @@ def read_analog_inputs():
                         latest_data['timestamp'] = time.time()
                         latest_data['readings'] = readings
                     
-                    time.sleep(1.0 / SAMPLE_RATE)
+                    # Short sleep to prevent CPU spinning (sample at ~10Hz)
+                    time.sleep(0.05)
         
         except Exception as e:
             device_online = False
