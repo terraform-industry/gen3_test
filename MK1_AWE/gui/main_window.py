@@ -22,12 +22,13 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1000, 700)
         
         # Position GUI in grid (2nd monitor, position [0,0] = top-left)
+        # Add small offset so title bar is accessible
         monitor_offset = 3440
-        title_bar_height = 40  # Account for Windows title bar
+        title_bar_offset = 30  # Keep title bar visible
         gui_x = monitor_offset + 0  # Top-left position
-        gui_y = title_bar_height   # Offset so title bar is visible
+        gui_y = title_bar_offset   # Offset for title bar
         gui_w = 1147
-        gui_h = 720 - title_bar_height  # Adjust height to fit in grid
+        gui_h = 720 - title_bar_offset  # Adjust height
         self.setGeometry(gui_x, gui_y, gui_w, gui_h)
         
         # Track which devices have been initialized to safe state

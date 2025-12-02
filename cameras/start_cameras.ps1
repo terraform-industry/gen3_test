@@ -12,17 +12,19 @@ $cameras = @(
 
 # Grid positions for 2x3 layout on 2nd monitor (3440x1440)
 # Monitor offset: 3440 pixels (moves to 2nd screen)
-# Position [0,0] is reserved for GUI
+# Position [0,0] is reserved for GUI (top-left)
+# Overlap windows to eliminate gaps
 $monitor_offset = 3440
-$width = 1147
-$height = 720
+$width = 1155   # Slightly larger to cover gaps
+$height = 728   # Slightly larger to cover gaps
+$overlap = 8    # Pixels to overlap
 $positions = @(
-    # [0,0] is GUI position - skip
-    @{X=$monitor_offset+1147; Y=0;   W=$width; H=$height},  # [1,0] Cam1
-    @{X=$monitor_offset+2294; Y=0;   W=$width; H=$height},  # [2,0] Cam2
-    @{X=$monitor_offset+0;    Y=720; W=$width; H=$height},  # [0,1] Cam3
-    @{X=$monitor_offset+1147; Y=720; W=$width; H=$height},  # [1,1] Cam4
-    @{X=$monitor_offset+2294; Y=720; W=$width; H=$height}   # [2,1] Cam5
+    # [0,0] is GUI position (no VLC window)
+    @{X=$monitor_offset+1147-$overlap; Y=0;          W=$width; H=$height},  # [1,0] Cam1
+    @{X=$monitor_offset+2294-$overlap; Y=0;          W=$width; H=$height},  # [2,0] Cam2
+    @{X=$monitor_offset+0;             Y=720-$overlap; W=$width; H=$height},  # [0,1] Cam3
+    @{X=$monitor_offset+1147-$overlap; Y=720-$overlap; W=$width; H=$height},  # [1,1] Cam4
+    @{X=$monitor_offset+2294-$overlap; Y=720-$overlap; W=$width; H=$height}   # [2,1] Cam5
 )
 
 # Windows API for window positioning
