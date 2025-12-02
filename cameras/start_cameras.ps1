@@ -1,25 +1,28 @@
 # Start cameras and arrange in 2x3 grid on 3440x1440 monitor
 $VLC = "C:\Program Files\VideoLAN\VLC\vlc.exe"
 
-# Install powershell-yaml if not present
-if (-not (Get-Module -ListAvailable -Name powershell-yaml)) {
-    Write-Host "Installing powershell-yaml module..."
-    Install-Module -Name powershell-yaml -Force -Scope CurrentUser -ErrorAction SilentlyContinue
-}
-
-# Import YAML module
-Import-Module powershell-yaml -ErrorAction SilentlyContinue
-
-# Load camera configuration from devices.yaml
+# Load camera URLs from devices.yaml using simple parsing
 $configPath = Join-Path $PSScriptRoot "..\MK1_AWE\config\devices.yaml"
-$configYaml = Get-Content $configPath -Raw
-$config = ConvertFrom-Yaml $configYaml
+$yamlContent = Get-Content $configPath
 
-# Extract camera URLs in order (cam01-cam05)
+# Simple YAML parsing for camera URLs (avoids module dependency)
 $cameras = @()
-foreach ($camId in @('cam01', 'cam02', 'cam03', 'cam04', 'cam05')) {
-    $camUrl = $config.devices.cameras.$camId.url
-    $cameras += $camUrl
+$inCamerasSection = $false
+foreach ($line in $yamlContent) {
+    if ($line -match '^\s+cameras:') {
+        $inCamerasSection = $true
+        continue
+    }
+    if ($inCamerasSection) {
+        # Exit cameras section if we hit another top-level key
+        if ($line -match '^\s{0,2}\w+:' -and $line -notmatch '^\s+cam\d+:' -and $line -notmatch '^\s+url:') {
+            break
+        }
+        # Extract URL
+        if ($line -match 'url:\s+"(.+)"') {
+            $cameras += $matches[1]
+        }
+    }
 }
 
 Write-Host "Loaded $($cameras.Count) cameras from devices.yaml"
