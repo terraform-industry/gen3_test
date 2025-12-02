@@ -97,6 +97,9 @@ class MainWindow(QMainWindow):
         # Trigger first status check (non-blocking)
         self.hw_status_widget.update_status()
         
+        # Launch cameras
+        self._launch_cameras()
+        
         # Status bar
         self.status_bar = QStatusBar()
         self.status_bar.showMessage("Ready")
@@ -227,6 +230,9 @@ class MainWindow(QMainWindow):
         """Handle window close - return all systems to safe state"""
         self.is_shutting_down = True
         self.status_bar.showMessage("Shutting down safely...")
+        
+        # Close cameras
+        self._close_cameras()
         
         # Stop background status checks
         if hasattr(self, 'status_timer'):
@@ -361,6 +367,31 @@ class MainWindow(QMainWindow):
             }
         """)
         msg.exec()
+    
+    def _launch_cameras(self):
+        """Launch camera streams via start_cameras.bat"""
+        import subprocess
+        from pathlib import Path
+        
+        try:
+            camera_script = Path(__file__).parent.parent.parent / "cameras" / "start_cameras.bat"
+            if camera_script.exists():
+                subprocess.Popen([str(camera_script)], shell=True)
+                print("Camera streams launched")
+        except Exception as e:
+            print(f"Error launching cameras: {e}")
+    
+    def _close_cameras(self):
+        """Close all VLC windows"""
+        import subprocess
+        
+        try:
+            # Kill all VLC processes
+            subprocess.run(["taskkill", "/F", "/IM", "vlc.exe"], 
+                         capture_output=True, check=False)
+            print("Camera streams closed")
+        except Exception as e:
+            print(f"Error closing cameras: {e}")
     
     def _create_placeholder_frame(self, label_text):
         """Create a styled placeholder frame with label"""

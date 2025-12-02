@@ -8,16 +8,18 @@
 **✅ Phase 2 Complete:** Hardware Interfaces (Tasks 11-25, except 19)
 **✅ Phase 3 Complete:** Control GUI Implementation (Tasks 26-40)
 **✅ Phase 4 Complete:** Grafana Dashboards (Tasks 41-45)
-**🔄 Phase 3B In Progress:** BGA Integration (Tasks 56-65) - 56-58 complete
-**🔜 Next:** Data Export/Analysis (Phase 5: Tasks 46-55)
+**✅ Phase 3B Complete:** BGA Integration (Tasks 56-61)
+**✅ Phase 5 Complete:** Data Export/Analysis (Tasks 46-53)
+**🔜 Next:** Final polish and documentation
 
 **System Status:**
-- ✅ All hardware bridges running as Windows services (NI analog, Pico TC-08, PSU, BGA01/02)
+- ✅ All hardware bridges running as Windows services (NI analog, Pico TC-08, PSU, BGA01/02/03)
 - ✅ Docker stack operational (InfluxDB, Telegraf, Grafana)
-- ✅ Data flowing: 16 analog inputs (10Hz) + 8 thermocouples (1Hz) + PSU (10Hz) + 16 relay states (10Hz) + 2 BGAs (2Hz)
-- ✅ GUI functional: Relay control (16 relays) + PSU control (V/I/Ramp/Profile) + BGA purge
-- ✅ Grafana dashboards: Analog inputs, Thermocouples, PSU, BGAs, Relay states
-- 🔄 BGA03: Bridge created, service setup pending (Task 60)
+- ✅ Data flowing: 16 analog inputs (20Hz) + 8 thermocouples (1Hz) + PSU (10Hz) + 3 BGAs (2Hz)
+- ✅ GUI functional: Relay control (16 relays) + PSU control (V/I/Ramp/Profile) + Purge button (RL04/RL06)
+- ✅ Grafana dashboards: Analog inputs, Thermocouples, PSU, BGAs, Pressures, Flowrate, Current, Voltage, Power
+- ✅ Data export: GUI "Save Data..." button → CSV + plots with sensor labels
+- ✅ sensor_labels.yaml: Easy per-test configuration (labels, units, ranges, gas configs)
 
 ---
 
@@ -361,17 +363,17 @@
     - Restart Telegraf container
     - Verify BGA data flowing to InfluxDB
 
-60. **Setup BGA bridges as Windows services**
+60. ✅ **Setup BGA bridges as Windows services**
     - Use NSSM to install 3 BGA bridge services
     - Configure auto-start on boot
     - Configure auto-restart on failure
-    - Test service management
+    - All services auto-load config from devices.yaml
 
-61. **Test BGA control from GUI**
-    - Verify BGA01/02/03 show "Online" in hardware status
-    - Test PURGE button (should toggle H2/N2 for all BGAs)
-    - Verify gas changes via InfluxDB or BGA display
-    - Test safe state on GUI close (normal mode)
+61. ✅ **Test BGA control from GUI**
+    - BGA01/02/03 show "Online" in hardware status
+    - PURGE button toggles RL04/RL06 (purge valves)
+    - BGAs initialized to normal gas config on startup
+    - Safe state on GUI close working
 
 62. **Create Grafana panels for BGA data**
     - Panel: Gas purity (%) for all 3 BGAs
@@ -460,21 +462,21 @@
     - Status bar shows progress/completion
     - Success/error popups with results
 
-53. **Test GUI export workflow**
+53. ✅ **Test GUI export workflow**
     - Launch GUI
-    - Click SAVE button
-    - Enter test parameters
-    - Verify CSV files created
-    - Verify plots generated (if auto-plot enabled)
-    - Check error handling (invalid dates, wrong format)
+    - Click "Save Data..." button in hardware status
+    - Date/time pickers for easy selection
+    - CSV files created with labels
+    - Plots generated successfully
+    - Error handling working (date validation, format checks)
 
-54. **Add export menu/options**
-    - Optional: Add "Export plots automatically" checkbox
-    - Optional: Add "Open folder after export" checkbox
-    - Optional: Add recent test list (quick re-export)
-    - Optional: Add default time range (last hour, last 30 min)
+54. **Add export menu/options** (OPTIONAL - Future)
+    - Add "Export plots automatically" checkbox
+    - Add "Open folder after export" checkbox
+    - Add recent test list (quick re-export)
+    - Add default time range (last hour, last 30 min)
 
-55. **Document export workflow**
+55. **Document export workflow** (OPTIONAL - Future)
     - Update README with export instructions
     - Document standalone vs GUI export
     - Document file structure (CSVs, plots, config)
