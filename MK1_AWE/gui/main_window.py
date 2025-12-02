@@ -369,15 +369,20 @@ class MainWindow(QMainWindow):
         msg.exec()
     
     def _launch_cameras(self):
-        """Launch camera streams via start_cameras.bat"""
+        """Launch camera streams and arrange in 2x3 grid"""
         import subprocess
         from pathlib import Path
         
         try:
-            camera_script = Path(__file__).parent.parent.parent / "cameras" / "start_cameras.bat"
+            camera_script = Path(__file__).parent.parent.parent / "cameras" / "start_cameras.ps1"
             if camera_script.exists():
-                subprocess.Popen([str(camera_script)], shell=True)
-                print("Camera streams launched")
+                # Run PowerShell script in background
+                subprocess.Popen([
+                    "powershell.exe",
+                    "-ExecutionPolicy", "Bypass",
+                    "-File", str(camera_script)
+                ], creationflags=subprocess.CREATE_NO_WINDOW)
+                print("Camera streams launched (arranging in 2x3 grid)")
         except Exception as e:
             print(f"Error launching cameras: {e}")
     
