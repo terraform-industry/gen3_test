@@ -1,0 +1,280 @@
+# devices.yaml
+# Gen3 AWE Hardware Configuration
+
+# Device Connections
+devices:
+  NI_cDAQ:
+    name: "cDAQ9187-23E902C"
+    ip: "192.168.0.108"
+    protocol: "nidaqmx"
+    slots:
+      1: "NI-9253"  # 8-channel analog current input
+      2: "NI-9485"  # 8-channel relay output
+      3: "NI-9485"  # 8-channel relay output
+      4: "NI-9253"  # 8-channel analog current input
+
+  Pico_TC08:
+    protocol: "usb"
+    device_id: ""  # USB device ID (TBD)
+    dll_path: "C:\\Program Files\\Pico Technology\\SDK\\lib\\usbtc08.dll"
+    channels: 8
+
+  BGA01:
+    protocol: "rs422_usb"
+    com_port: "COM3"
+    baud_rate: 9600
+    http_port: 8888
+    device_id: "BGA01"
+
+  BGA02:
+    protocol: "rs422_usb"
+    com_port: "COM8"
+    baud_rate: 9600
+    http_port: 8889
+    device_id: "BGA02"
+
+  BGA03:
+    protocol: "rs422_usb"
+    com_port: "COM10"
+    baud_rate: 9600
+    http_port: 8890
+    device_id: "BGA03"
+
+  PSU:
+    protocol: "modbus_rtu"
+    com_port: "COM11"
+    baud_rate: 9600
+    parity: "N"
+    stop_bits: 1
+    slave_id: 1
+    timeout: 0.5
+
+  # Cameras (RTSP streams)
+  cameras:
+    cam01:
+      url: "rtsp://192.168.0.180:554/main/av"
+      grid_position: [1, 0]  # Top-center
+    cam02:
+      url: "rtsp://192.168.0.181:554/main/av"
+      grid_position: [2, 0]  # Top-right
+    cam03:
+      url: "rtsp://admin:Carbonneutral1!@192.168.0.100:554/h264Preview_01_main"
+      grid_position: [0, 1]  # Bottom-left
+    cam04:
+      url: "rtsp://192.168.0.182:554/main/av"
+      grid_position: [1, 1]  # Bottom-center
+    cam05:
+      url: "rtsp://admin:Carbonneutral1!@192.168.0.3:554/h264Preview_01_main"
+      grid_position: [2, 1]  # Bottom-right
+
+# Module Configurations
+modules:
+  NI_cDAQ_Analog:
+    # Slot 1: NI-9253 (AI01-AI08)
+    # Hardware config only (test-specific config in sensor_labels.yaml)
+    slot_1:
+      AI01:
+        channel: 0
+        range_min: 0.004    # 4 mA (hardware minimum)
+        range_max: 0.020    # 20 mA (hardware maximum)
+      AI02:
+        channel: 1
+        range_min: 0.004
+        range_max: 0.020
+      AI03:
+        channel: 2
+        range_min: 0.004
+        range_max: 0.020
+      AI04:
+        channel: 3
+        range_min: 0.004
+        range_max: 0.020
+      AI05:
+        channel: 4
+        range_min: 0.004
+        range_max: 0.020
+      AI06:
+        channel: 5
+        range_min: 0.004
+        range_max: 0.020
+      AI07:
+        channel: 6
+        range_min: 0.004
+        range_max: 0.020
+      AI08:
+        channel: 7
+        range_min: 0.004
+        range_max: 0.020
+    
+    # Slot 4: NI-9253 (AI09-AI16)
+    slot_4:
+      AI09:
+        channel: 0
+        range_min: 0.004
+        range_max: 0.020
+      AI10:
+        channel: 1
+        range_min: 0.004
+        range_max: 0.020
+      AI11:
+        channel: 2
+        range_min: 0.004
+        range_max: 0.020
+      AI12:
+        channel: 3
+        range_min: 0.004
+        range_max: 0.020
+      AI13:
+        channel: 4
+        range_min: 0.004
+        range_max: 0.020
+      AI14:
+        channel: 5
+        range_min: 0.004
+        range_max: 0.020
+      AI15:
+        channel: 6
+        range_min: 0.004
+        range_max: 0.020
+      AI16:
+        channel: 7
+        range_min: 0.004
+        range_max: 0.020
+
+  NI_cDAQ_Relays:
+    # Slot 2: NI-9485 (RL01-RL08)
+    # Labels defined in sensor_labels.yaml
+    slot_2:
+      RL01:
+        channel: 0
+      RL02:
+        channel: 1
+      RL03:
+        channel: 2
+      RL04:
+        channel: 3
+      RL05:
+        channel: 4
+      RL06:
+        channel: 5
+      RL07:
+        channel: 6
+      RL08:
+        channel: 7
+    
+    # Slot 3: NI-9485 (RL09-RL16)
+    slot_3:
+      RL09:
+        channel: 0
+      RL10:
+        channel: 1
+      RL11:
+        channel: 2
+      RL12:
+        channel: 3
+      RL13:
+        channel: 4
+      RL14:
+        channel: 5
+      RL15:
+        channel: 6
+      RL16:
+        channel: 7
+
+  Pico_TC08_Channels:
+    # Labels in sensor_labels.yaml
+    TC01:
+      channel: 1
+      type: "K"
+    TC02:
+      channel: 2
+      type: "K"
+    TC03:
+      channel: 3
+      type: "K"
+    TC04:
+      channel: 4
+      type: "K"
+    TC05:
+      channel: 5
+      type: "K"
+    TC06:
+      channel: 6
+      type: "K"
+    TC07:
+      channel: 7
+      type: "K"
+    TC08:
+      channel: 8
+      type: "K"
+
+  PSU_Registers:
+    # Read registers (Function 0x03 - Read Holding Registers)
+    read:
+      voltage:        { address: 0x0001, scale: 0.1, unit: "V" }
+      current:        { address: 0x0002, scale: 0.1, unit: "A" }
+      power:          { address: 0x0003, scale: 0.1, unit: "W" }
+      status:         { address: 0x000A, scale: 1.0, unit: "" }
+    
+    # Write registers (Function 0x06 - Write Single Register)
+    write:
+      set_voltage:    { address: 0x0101, scale: 0.1 }
+      set_current:    { address: 0x0102, scale: 0.1 }
+      enable_output:  { address: 0x0103, scale: 1.0 }
+
+# Gas Reference
+gas_reference:
+  "7782-44-7": "O2"
+  "1333-74-0": "H2"
+  "7727-37-9": "N2"
+
+# System Parameters
+system:
+  influxdb_url: "http://localhost:8086"
+  influxdb_org: "electrolyzer"
+  influxdb_bucket: "electrolyzer_data"
+  grafana_url: "http://localhost:3000"
+
+# Hardware Bridge Ports
+bridges:
+  ni_analog:
+    port: 8881
+    sample_rate: 100  # Hz
+  pico_tc08:
+    port: 8882
+    sample_rate: 1    # Hz (hardware limitation)
+  psu:
+    port: 8883
+    sample_rate: 1    # Hz
+  bga01:
+    port: 8888
+  bga02:
+    port: 8889
+  bga03:
+    port: 8890
+
+# PSU Control
+psu_control:
+  mode: "gen3"  # Gen3 mode (single PSU via Modbus RTU)
+  
+  # Gen3: Single PSU via Modbus RTU
+  gen3:
+    voltage_min: 100.0       # Minimum voltage
+    voltage_max: 900.0       # Maximum voltage
+    current_min: 1.0         # Minimum current
+    current_max: 100.0       # Maximum current
+    safe_voltage: 0.0        # Safe state voltage
+    safe_current: 0.0        # Safe state current
+    ramp_steps: 20           # Number of discrete ramp steps
+    ramp_step_duration: 6    # Duration of each step in seconds
+    profile_path: "MK1_AWE/profiles/solar_profile_1.csv"  # Current profile CSV path
+
+# Telegraf Settings
+telegraf:
+  agent:
+    interval: "1s"
+    round_interval: true
+    metric_batch_size: 1000
+    metric_buffer_limit: 10000
+    flush_interval: "1s"
+    hostname: "Gen3_AWE"

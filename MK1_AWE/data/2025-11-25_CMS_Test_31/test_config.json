@@ -1,0 +1,27 @@
+{
+  "test_info": {
+    "test_name": "CMS_Test_31",
+    "start_time_local": "2025-11-25T15:22:01-08:00",
+    "stop_time_local": "2025-11-25T20:19:45-08:00",
+    "start_time_utc": "2025-11-25T23:22:01Z",
+    "stop_time_utc": "2025-11-26T04:19:45Z",
+    "timezone": "America/Los_Angeles",
+    "processed_at": "2025-12-08T15:50:57.171299"
+  },
+  "downsampling": {
+    "AIX": "100ms",
+    "TC": "1s",
+    "PSU": "100ms",
+    "BGA": "500ms",
+    "RL": "100ms",
+    "function": "mean"
+  },
+  "plot_settings": {
+    "dpi": 300,
+    "format": "jpg",
+    "figure_size": [
+      12,
+      6
+    ]
+  }
+}
