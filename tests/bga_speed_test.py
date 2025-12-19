@@ -6,7 +6,7 @@ Measures maximum achievable sample rate for BGA readings
 
 import serial
 import time
-import statistics
+import statistics 
 
 # Configuration - match your working setup
 COM_PORT = "COM3"  # Change to COM8 or COM10 as needed
