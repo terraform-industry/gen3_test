@@ -95,6 +95,7 @@ def write_to_influxdb(samples):
             timestamp_ns = sample['timestamp_ns']
             readings = sample['readings']
             
+            # All fields as float to match existing InfluxDB schema
             point = Point("psu") \
                 .tag("hardware", "psu") \
                 .tag("location", "gen3_test_rig") \
@@ -102,15 +103,15 @@ def write_to_influxdb(samples):
                 .field("current", float(readings['current'])) \
                 .field("power", float(readings['power'])) \
                 .field("capacity", float(readings['capacity'])) \
-                .field("runtime", int(readings['runtime'])) \
+                .field("runtime", float(readings['runtime'])) \
                 .field("battery_v", float(readings['battery_v'])) \
-                .field("temperature", int(readings['temperature'])) \
-                .field("status", int(readings['status'])) \
+                .field("temperature", float(readings['temperature'])) \
+                .field("status", float(readings['status'])) \
                 .field("set_voltage_rb", float(readings['set_voltage_rb'])) \
                 .field("set_current_rb", float(readings['set_current_rb'])) \
-                .field("output_enable", int(readings['output_enable'])) \
-                .field("sys_fault", int(readings['sys_fault'])) \
-                .field("mod_fault", int(readings['mod_fault'])) \
+                .field("output_enable", float(readings['output_enable'])) \
+                .field("sys_fault", float(readings['sys_fault'])) \
+                .field("mod_fault", float(readings['mod_fault'])) \
                 .time(timestamp_ns, WritePrecision.NS)
             points.append(point)
         
