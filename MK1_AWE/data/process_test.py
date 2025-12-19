@@ -7,16 +7,25 @@ Edit test_config.py to configure, then run: python process_test.py
 
 import subprocess
 import sys
-import json
-import shutil
 from pathlib import Path
 from datetime import datetime
 
 # All configuration now in test_config.py - edit that file!
 from test_config import (
-    TEST_NAME, START_TIME, STOP_TIME, START_TIME_UTC, STOP_TIME_UTC,
-    PLOT_DPI, PLOT_FORMAT, FIGURE_SIZE
+    TEST_NAME, START_TIME, STOP_TIME,
+    MAX_EXPORT_RATE_HZ
 )
+
+# Import test info generator
+from generate_test_info import generate_test_info_md, save_test_info_md, update_export_timestamp
+
+# Import standalone script generators
+from generate_standalone_scripts import (
+    generate_standalone_export_csv, save_standalone_export_csv,
+    generate_standalone_plot_data, save_standalone_plot_data
+)
+
+from test_config import PLOT_DPI, PLOT_FORMAT, FIGURE_SIZE, MAX_PLOT_POINTS
 
 
 def run_export():
@@ -53,37 +62,49 @@ def run_plotting():
     print()
 
 
-def save_test_config(output_dir):
-    """Save complete test configuration to output directory"""
-    config_log = {
-        'test_info': {
-            'test_name': TEST_NAME,
-            'start_time_local': START_TIME.isoformat(),
-            'stop_time_local': STOP_TIME.isoformat(),
-            'start_time_utc': START_TIME_UTC,
-            'stop_time_utc': STOP_TIME_UTC,
-            'timezone': str(START_TIME.tzinfo),
-            'processed_at': datetime.now().isoformat()
-        },
-        'plot_settings': {
-            'dpi': PLOT_DPI,
-            'format': PLOT_FORMAT,
-            'figure_size': FIGURE_SIZE
-        }
-    }
+def save_test_info(output_dir, csv_export_time=None, plot_export_time=None):
+    """Generate test_info.md with sensor labels and device config"""
     
-    # Save as JSON
-    config_path = output_dir / 'test_config.json'
-    with open(config_path, 'w') as f:
-        json.dump(config_log, f, indent=2)
+    content = generate_test_info_md(
+        test_name=TEST_NAME,
+        start_time=START_TIME,
+        stop_time=STOP_TIME,
+        csv_export_time=csv_export_time,
+        plot_export_time=plot_export_time,
+        max_export_rate_hz=MAX_EXPORT_RATE_HZ
+    )
     
-    # Also save a copy of devices.yaml
-    devices_yaml_src = Path(__file__).parent.parent / 'config' / 'devices.yaml'
-    devices_yaml_dst = output_dir / 'devices.yaml'
-    shutil.copy2(devices_yaml_src, devices_yaml_dst)
+    info_path = output_dir / 'test_info.md'
+    save_test_info_md(info_path, content)
     
-    print(f"  Config saved: test_config.json")
-    print(f"  Devices snapshot: devices.yaml")
+    print(f"  Test info saved: test_info.md")
+
+
+def save_standalone_scripts(output_dir):
+    """Generate and save standalone export/plot scripts to the output folder"""
+    
+    # Generate standalone export_csv.py
+    export_script = generate_standalone_export_csv(
+        test_name=TEST_NAME,
+        start_time=START_TIME,
+        stop_time=STOP_TIME,
+        max_export_rate_hz=MAX_EXPORT_RATE_HZ
+    )
+    save_standalone_export_csv(output_dir, export_script)
+    print(f"  Standalone script: export_csv.py")
+    
+    # Generate standalone plot_data.py
+    plot_script = generate_standalone_plot_data(
+        test_name=TEST_NAME,
+        start_time=START_TIME,
+        stop_time=STOP_TIME,
+        plot_dpi=PLOT_DPI,
+        plot_format=PLOT_FORMAT,
+        figure_size=FIGURE_SIZE,
+        max_plot_points=MAX_PLOT_POINTS
+    )
+    save_standalone_plot_data(output_dir, plot_script)
+    print(f"  Standalone script: plot_data.py")
 
 
 def main():
@@ -101,25 +122,30 @@ def main():
     output_dir = Path(__file__).parent / f"{date_str}_{TEST_NAME}"
     output_dir.mkdir(exist_ok=True)
     
-    # Save configuration snapshot
-    print("Saving configuration...")
-    save_test_config(output_dir)
-    print()
-    
     # Step 1: Export CSVs
     run_export()
+    csv_export_time = datetime.now()
     
     # Step 2: Generate plots
     run_plotting()
+    plot_export_time = datetime.now()
+    
+    # Save test info and standalone scripts
+    print("Saving test documentation and scripts...")
+    save_test_info(output_dir, csv_export_time, plot_export_time)
+    save_standalone_scripts(output_dir)
+    print()
     
     print("=" * 70)
     print("[OK] PROCESSING COMPLETE")
     print("=" * 70)
     print()
     print(f"Output directory: {output_dir.name}/")
-    print("  - CSVs: YYYY-MM-DD_*.csv")
-    print("  - Plots: plots/*.jpg")
-    print("  - Config: test_config.json, devices.yaml")
+    print("  - csv/: CSV data files")
+    print("  - plots/: Plot images")
+    print("  - test_info.md: Test documentation")
+    print("  - export_csv.py: Standalone CSV regeneration script")
+    print("  - plot_data.py: Standalone plot regeneration script")
     print()
 
 

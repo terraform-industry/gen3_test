@@ -504,45 +504,45 @@
     - Removed 135 lines of dead code (old duplicate functions with undefined references)
     - Plots render fast regardless of input size (1 min to 8 hours)
 
-73. **Create test_info.md template**
-    - Design human-readable Markdown document structure:
-      - Test metadata (name, start/stop times, timezone)
-      - Sensor configuration summary (from sensor_labels.yaml):
-        - Analog inputs: channel → label, unit, range
-        - Thermocouples: channel → label
-        - BGAs: ID → label, gas config
-        - Relays: channel → label
-      - Hardware summary (from devices.yaml):
-        - Sample rates per measurement
-        - Device names/IPs (non-sensitive)
-      - Export timestamps:
-        - CSV export date/time
-        - Plot export date/time
-    - Template should be clear and self-documenting
+73. ✅ **Create test_info.md template**
+    - Created `generate_test_info.py` with:
+      - `generate_test_info_md()` - generates Markdown content
+      - `save_test_info_md()` - saves to disk
+      - `update_export_timestamp()` - updates CSV/plot timestamps in existing file
+    - Markdown structure includes:
+      - Test metadata (name, start/stop times, duration, timezone)
+      - Export timestamps table (CSV and plot dates)
+      - Sample rates table (native vs export rate with downsampling info)
+      - Analog inputs table (channel, label, type, range, unit)
+      - Thermocouples table (channel, label, type)
+      - BGAs table (ID, label, primary/secondary/purge gases)
+      - Relays table (channel, label)
+      - Hardware configuration (NI cDAQ, PSU, Pico TC-08)
 
-74. **Update process_test.py to generate test_info.md**
-    - Read sensor_labels.yaml and extract relevant fields
-    - Read devices.yaml and extract relevant fields (sample rates, device info)
-    - Generate test_info.md with CSV export timestamp
-    - Replace current test_config.json and devices.yaml copy
+74. ✅ **Update process_test.py to generate test_info.md**
+    - Replaced `save_test_config()` with `save_test_info()`
+    - Imports `generate_test_info_md` from new module
+    - Captures CSV and plot export timestamps
+    - Generates test_info.md after both exports complete
+    - Removed test_config.json and devices.yaml copy (replaced by test_info.md)
 
-75. **Create standalone export_csv.py for export folder**
-    - Self-contained script (no imports from MK1_AWE/gui/)
-    - Hardcoded test parameters (start/stop times, test name)
-    - Hardcoded InfluxDB connection (URL, org, bucket)
-    - Reads token from environment variable
-    - When run: regenerates all CSVs, updates "CSV export date" in test_info.md
-    - Include usage instructions in script header
+75. ✅ **Create standalone export_csv.py for export folder**
+    - Created `generate_standalone_scripts.py` with `generate_standalone_export_csv()`
+    - Self-contained script with hardcoded parameters (no MK1_AWE imports)
+    - Embedded sensor labels, InfluxDB config, test times
+    - Reads token from INFLUXDB_ADMIN_TOKEN environment variable
+    - Updates "CSV export date" in test_info.md when run
+    - Includes usage instructions in script header
 
-76. **Create standalone plot_data.py for export folder**
-    - Self-contained script (no imports from MK1_AWE/gui/)
-    - Reads CSVs from ./csv/ folder
-    - Hardcoded plot parameters (labels, colors, ranges)
-    - When run: regenerates all plots, updates "Plot export date" in test_info.md
-    - Include usage instructions in script header
+76. ✅ **Create standalone plot_data.py for export folder**
+    - Added `generate_standalone_plot_data()` to same module
+    - Self-contained script that reads from ./csv/ folder
+    - Embedded sensor labels, plot settings
+    - Updates "Plot export date" in test_info.md when run
+    - Generates: analog_inputs, temperatures, gas_purity, power plots
 
-77. **Update export folder structure**
-    - New structure:
+77. ✅ **Update export folder structure**
+    - Updated process_test.py to create new structure:
       ```
       YYYY-MM-DD_TestName/
       ├── test_info.md        # Combined info document
@@ -551,8 +551,8 @@
       ├── csv/                # CSV files
       └── plots/              # Plot images
       ```
-    - Update process_test.py to create this structure
-    - Remove old test_config.json and devices.yaml copy
+    - Removed old test_config.json and devices.yaml copy
+    - Added `save_standalone_scripts()` function
 
 78. **Test standalone script reproducibility**
     - Run process_test.py to create export folder
