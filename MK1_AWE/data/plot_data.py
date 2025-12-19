@@ -10,7 +10,7 @@ import numpy as np
 import sys
 
 # Import configuration from single source of truth
-from test_config import PLOT_DPI, PLOT_FORMAT, FIGURE_SIZE
+from test_config import PLOT_DPI, PLOT_FORMAT, FIGURE_SIZE, MAX_PLOT_POINTS
 
 # Import sensor labels
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'gui'))
@@ -21,6 +21,26 @@ SENSOR_LABELS = load_sensor_labels()
 
 # Which test directory to plot (auto-detects latest)
 TEST_DIR = None
+
+
+def decimate_for_plot(df, max_points=MAX_PLOT_POINTS):
+    """Decimate dataframe for plotting (display only, doesn't affect saved CSV data).
+    
+    Uniformly samples data to reduce plot rendering time while preserving visual shape.
+    Small datasets (< max_points) are returned unchanged.
+    
+    Args:
+        df: DataFrame with timestamp column
+        max_points: Maximum number of points to return
+        
+    Returns:
+        Decimated DataFrame (or original if already small enough)
+    """
+    if len(df) <= max_points:
+        return df
+    
+    step = len(df) // max_points
+    return df.iloc[::step].copy()
 
 
 def find_latest_test_dir():
@@ -97,17 +117,20 @@ def plot_analog_inputs(test_dir, plots_dir, purge_periods, active_periods):
     
     df = pd.read_csv(csv_path, parse_dates=['timestamp'])
     
+    # Decimate for plotting (full data preserved in CSV)
+    df_plot = decimate_for_plot(df)
+    
     fig, ax = plt.subplots(figsize=FIGURE_SIZE)
     
     # Add shading first (background)
     add_shading(ax, purge_periods, active_periods)
     
-    # Plot each AI channel if it has activity > 1mA
+    # Plot each AI channel if it has activity > 1mA (check on full data, plot decimated)
     plotted_channels = 0
     for i in range(1, 17):
         col = f'AI{i:02d}'
         if col in df.columns and df[col].max() > 1.0:
-            ax.plot(df['timestamp'], df[col], label=col, linewidth=0.8)
+            ax.plot(df_plot['timestamp'], df_plot[col], label=col, linewidth=0.8)
             plotted_channels += 1
     
     if plotted_channels == 0:
@@ -165,13 +188,15 @@ def plot_temperatures(test_dir, plots_dir, purge_periods, active_periods):
     if tc_path.exists():
         df_tc = pd.read_csv(tc_path, parse_dates=['timestamp'])
         time_range = (df_tc['timestamp'].min(), df_tc['timestamp'].max())
+        # Decimate for plotting
+        df_tc_plot = decimate_for_plot(df_tc)
         
         for col in df_tc.columns:
             if col != 'timestamp':
-                # Filter out invalid temps
+                # Filter out invalid temps (check on full data)
                 valid_temps = (df_tc[col] > -200) & (df_tc[col] < 1500)
                 if valid_temps.any():
-                    ax.plot(df_tc['timestamp'], df_tc[col], label=col, linewidth=0.8, alpha=0.7)
+                    ax.plot(df_tc_plot['timestamp'], df_tc_plot[col], label=col, linewidth=0.8, alpha=0.7)
                     plotted_channels += 1
     
     # Plot BGA temperatures
@@ -184,12 +209,14 @@ def plot_temperatures(test_dir, plots_dir, purge_periods, active_periods):
             df_bga = pd.read_csv(bga_path, parse_dates=['timestamp'])
             if time_range is None:
                 time_range = (df_bga['timestamp'].min(), df_bga['timestamp'].max())
+            # Decimate for plotting
+            df_bga_plot = decimate_for_plot(df_bga)
             if 'temperature' in df_bga.columns:
                 # Get label
                 bga_config = bga_labels_config.get(bga_id, {})
                 bga_label = bga_config.get('label', bga_id) if isinstance(bga_config, dict) else bga_id
                 
-                ax.plot(df_bga['timestamp'], df_bga['temperature'], 
+                ax.plot(df_bga_plot['timestamp'], df_bga_plot['temperature'], 
                         label=f'{bga_label} Temp', linewidth=1.5, color=colors[idx], linestyle='--')
                 plotted_channels += 1
     
@@ -254,12 +281,14 @@ def plot_gas_purity(test_dir, plots_dir, purge_periods, active_periods, ylim=(0,
             df_bga = pd.read_csv(bga_path, parse_dates=['timestamp'])
             if time_range is None:
                 time_range = (df_bga['timestamp'].min(), df_bga['timestamp'].max())
+            # Decimate for plotting
+            df_bga_plot = decimate_for_plot(df_bga)
             if 'purity' in df_bga.columns:
                 # Get label
                 bga_config = bga_labels_config.get(bga_id, {})
                 bga_label = bga_config.get('label', bga_id) if isinstance(bga_config, dict) else bga_id
                 
-                ax.plot(df_bga['timestamp'], df_bga['purity'], 
+                ax.plot(df_bga_plot['timestamp'], df_bga_plot['purity'], 
                         label=bga_label, linewidth=1.5, marker='.', 
                         markersize=2, color=colors[idx])
                 plotted += 1
@@ -299,197 +328,6 @@ def plot_gas_purity(test_dir, plots_dir, purge_periods, active_periods, ylim=(0,
     print(f"  [OK] Gas Purity{' (Detail)' if suffix else ''} -> {output_path.name} ({plotted} BGAs)")
 
 
-def plot_cell_voltages(test_dir, plots_dir, purge_periods, active_periods):
-    """Plot stack voltage (CV001) and average cell voltage"""
-    csv_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_CV.csv"
-    
-    if not csv_path.exists():
-        print("  ⚠ CV.csv not found")
-        return
-    
-    df = pd.read_csv(csv_path, parse_dates=['timestamp'])
-    
-    if 'CV001' not in df.columns:
-        print("  ⚠ CV001 not found in data")
-        return
-    
-    fig, ax = plt.subplots(figsize=FIGURE_SIZE)
-    
-    # Add shading first
-    add_shading(ax, purge_periods, active_periods)
-    
-    # Plot CV001 (stack voltage)
-    ax.plot(df['timestamp'], df['CV001'], label='Stack Voltage (CV001)', 
-             linewidth=1.5, color='blue')
-    
-    # Plot average cell voltage (CV001 / 5)
-    avg_cell_voltage = df['CV001'] / 5
-    ax.plot(df['timestamp'], avg_cell_voltage, label='Average Cell Voltage', 
-             linewidth=1.5, color='green', linestyle='--')
-    
-    # Reference lines
-    ax.axhline(y=15, color='red', linestyle='--', linewidth=1, alpha=0.7, label='15V Limit')
-    ax.axhline(y=3, color='red', linestyle='--', linewidth=1, alpha=0.7, label='3V Limit')
-    
-    ax.set_xlabel('Time')
-    ax.set_ylabel('Voltage [V]')
-    ax.set_title('Voltages')
-    ax.set_ylim(0, 20)
-    ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
-    
-    # Format x-axis
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    
-    # Save
-    output_path = plots_dir / f"voltages.{PLOT_FORMAT}"
-    plt.savefig(output_path, dpi=PLOT_DPI, format=PLOT_FORMAT)
-    plt.close()
-    
-    print(f"  ✓ Voltages → {output_path.name}")
-
-
-def plot_pressures(test_dir, plots_dir, purge_periods, active_periods):
-    """Plot pressure sensors (AI01, AI02)"""
-    csv_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_AIX.csv"
-    
-    if not csv_path.exists():
-        print("  [!] AIX.csv not found")
-        return
-    
-    df = pd.read_csv(csv_path, parse_dates=['timestamp'])
-    
-    fig, ax = plt.subplots(figsize=FIGURE_SIZE)
-    add_shading(ax, purge_periods, active_periods)
-    
-    # Convert and plot AI01, AI02
-    for channel in ['AI01', 'AI02']:
-        if channel in df.columns and channel in SENSOR_CONVERSIONS:
-            config = SENSOR_CONVERSIONS[channel]
-            converted = df[channel].apply(lambda x: convert_mA_to_eng(x, config))
-            ax.plot(df['timestamp'], converted, label=config['label'], linewidth=1.5)
-    
-    ax.set_xlabel('Time')
-    ax.set_ylabel('Pressure [PSI]')
-    ax.set_title('Pressures')
-    ax.set_ylim(0, 1)
-    ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
-    
-    # Format x-axis
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    
-    # Save
-    output_path = plots_dir / f"pressures.{PLOT_FORMAT}"
-    plt.savefig(output_path, dpi=PLOT_DPI, format=PLOT_FORMAT)
-    plt.close()
-    
-    print(f"  ✓ Pressures → {output_path.name}")
-
-
-def plot_current(test_dir, plots_dir, purge_periods, active_periods):
-    """Plot actual and target current"""
-    csv_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_AIX.csv"
-    labjack_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_labjack.csv"
-    
-    if not csv_path.exists():
-        print("  [!] AIX.csv not found")
-        return
-    
-    df = pd.read_csv(csv_path, parse_dates=['timestamp'])
-    
-    if 'AI03' not in df.columns or 'AI03' not in SENSOR_CONVERSIONS:
-        print("  ⚠ AI03 not configured")
-        return
-    
-    fig, ax = plt.subplots(figsize=FIGURE_SIZE)
-    add_shading(ax, purge_periods, active_periods)
-    
-    # Plot actual current (AI03)
-    config = SENSOR_CONVERSIONS['AI03']
-    actual_current = df['AI03'].apply(lambda x: convert_mA_to_eng(x, config))
-    ax.plot(df['timestamp'], actual_current, label='Actual Current', linewidth=1.5, color='blue')
-    
-    # Plot target current from LabJack (AIN0: 0-5V → 0-100A)
-    if labjack_path.exists():
-        df_lj = pd.read_csv(labjack_path, parse_dates=['timestamp'])
-        if 'AIN0_voltage' in df_lj.columns:
-            target_current = df_lj['AIN0_voltage'] * 20.0  # 0-5V → 0-100A
-            ax.plot(df_lj['timestamp'], target_current, label='Target Current', 
-                   linewidth=1.5, color='orange', linestyle='--', alpha=0.8)
-    
-    ax.set_xlabel('Time')
-    ax.set_ylabel('Current [A]')
-    ax.set_title('Current')
-    ax.set_ylim(0, 120)
-    ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
-    
-    # Format x-axis
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    
-    # Save
-    output_path = plots_dir / f"current.{PLOT_FORMAT}"
-    plt.savefig(output_path, dpi=PLOT_DPI, format=PLOT_FORMAT)
-    plt.close()
-    
-    print(f"  ✓ Current → {output_path.name}")
-
-
-def plot_flowrates(test_dir, plots_dir, purge_periods, active_periods):
-    """Plot flowrate sensors (AI04, AI05)"""
-    csv_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_AIX.csv"
-    
-    if not csv_path.exists():
-        print("  [!] AIX.csv not found")
-        return
-    
-    df = pd.read_csv(csv_path, parse_dates=['timestamp'])
-    
-    fig, ax = plt.subplots(figsize=FIGURE_SIZE)
-    add_shading(ax, purge_periods, active_periods)
-    
-    # Convert and plot AI04, AI05
-    for channel in ['AI04', 'AI05']:
-        if channel in df.columns and channel in SENSOR_CONVERSIONS:
-            config = SENSOR_CONVERSIONS[channel]
-            converted = df[channel].apply(lambda x: convert_mA_to_eng(x, config))
-            ax.plot(df['timestamp'], converted, label=config['label'], linewidth=1.5)
-    
-    ax.set_xlabel('Time')
-    ax.set_ylabel('Flowrate [L/min]')
-    ax.set_title('Flowrates')
-    ax.set_ylim(0, 10)
-    ax.set_xlim(df['timestamp'].min(), df['timestamp'].max())
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25), ncol=3, fontsize=8, frameon=False)
-    
-    # Format x-axis
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    
-    # Save
-    output_path = plots_dir / f"flowrates.{PLOT_FORMAT}"
-    plt.savefig(output_path, dpi=PLOT_DPI, format=PLOT_FORMAT)
-    plt.close()
-    
-    print(f"  ✓ Flowrates → {output_path.name}")
-
-
 def plot_pressures(test_dir, plots_dir, purge_periods, active_periods):
     """Plot pressure sensors from converted data"""
     csv_path = test_dir / 'csv' / f"{test_dir.name.split('_')[0]}_AIX_converted.csv"
@@ -500,6 +338,9 @@ def plot_pressures(test_dir, plots_dir, purge_periods, active_periods):
     
     df = pd.read_csv(csv_path, parse_dates=['timestamp'])
     
+    # Decimate for plotting (full data preserved in CSV)
+    df_plot = decimate_for_plot(df)
+    
     fig, ax = plt.subplots(figsize=FIGURE_SIZE)
     add_shading(ax, purge_periods, active_periods)
     
@@ -507,7 +348,7 @@ def plot_pressures(test_dir, plots_dir, purge_periods, active_periods):
     plotted = 0
     for col in df.columns:
         if col != 'timestamp' and 'Pressure' in col:  # Match columns with "Pressure" in name
-            ax.plot(df['timestamp'], df[col], label=col, linewidth=1.5)
+            ax.plot(df_plot['timestamp'], df_plot[col], label=col, linewidth=1.5)
             plotted += 1
     
     if plotted == 0:
@@ -547,6 +388,9 @@ def plot_flowrates(test_dir, plots_dir, purge_periods, active_periods):
     
     df = pd.read_csv(csv_path, parse_dates=['timestamp'])
     
+    # Decimate for plotting (full data preserved in CSV)
+    df_plot = decimate_for_plot(df)
+    
     fig, ax = plt.subplots(figsize=FIGURE_SIZE)
     add_shading(ax, purge_periods, active_periods)
     
@@ -554,7 +398,7 @@ def plot_flowrates(test_dir, plots_dir, purge_periods, active_periods):
     plotted = 0
     for col in df.columns:
         if col != 'timestamp' and 'Flowrate' in col:
-            ax.plot(df['timestamp'], df[col], label=col, linewidth=1.5, color='blue')
+            ax.plot(df_plot['timestamp'], df_plot[col], label=col, linewidth=1.5, color='blue')
             plotted += 1
     
     if plotted == 0:
@@ -599,10 +443,12 @@ def plot_current(test_dir, plots_dir, purge_periods, active_periods):
     if aix_path.exists():
         df_aix = pd.read_csv(aix_path, parse_dates=['timestamp'])
         time_range = (df_aix['timestamp'].min(), df_aix['timestamp'].max())
+        # Decimate for plotting
+        df_aix_plot = decimate_for_plot(df_aix)
         # Find current column
         for col in df_aix.columns:
             if col != 'timestamp' and 'Current' in col:
-                ax.plot(df_aix['timestamp'], df_aix[col], label=col, linewidth=1.5, color='blue')
+                ax.plot(df_aix_plot['timestamp'], df_aix_plot[col], label=col, linewidth=1.5, color='blue')
                 plotted += 1
                 break
     
@@ -611,9 +457,11 @@ def plot_current(test_dir, plots_dir, purge_periods, active_periods):
         df_psu = pd.read_csv(psu_path, parse_dates=['timestamp'])
         if time_range is None:
             time_range = (df_psu['timestamp'].min(), df_psu['timestamp'].max())
+        # Decimate for plotting
+        df_psu_plot = decimate_for_plot(df_psu)
         if 'current' in df_psu.columns and 'set_current_rb' in df_psu.columns:
-            ax.plot(df_psu['timestamp'], df_psu['current'], label='PSU Actual', linewidth=1.5, color='green')
-            ax.plot(df_psu['timestamp'], df_psu['set_current_rb'], label='PSU Set', linewidth=1.5, color='orange', linestyle='--')
+            ax.plot(df_psu_plot['timestamp'], df_psu_plot['current'], label='PSU Actual', linewidth=1.5, color='green')
+            ax.plot(df_psu_plot['timestamp'], df_psu_plot['set_current_rb'], label='PSU Set', linewidth=1.5, color='orange', linestyle='--')
             plotted += 2
     
     if plotted == 0:
@@ -659,10 +507,12 @@ def plot_voltage(test_dir, plots_dir, purge_periods, active_periods):
     if aix_path.exists():
         df_aix = pd.read_csv(aix_path, parse_dates=['timestamp'])
         time_range = (df_aix['timestamp'].min(), df_aix['timestamp'].max())
+        # Decimate for plotting
+        df_aix_plot = decimate_for_plot(df_aix)
         # Find voltage column
         for col in df_aix.columns:
             if col != 'timestamp' and 'Voltage' in col:
-                ax.plot(df_aix['timestamp'], df_aix[col], label=col, linewidth=1.5, color='blue')
+                ax.plot(df_aix_plot['timestamp'], df_aix_plot[col], label=col, linewidth=1.5, color='blue')
                 plotted += 1
                 break
     
@@ -671,9 +521,11 @@ def plot_voltage(test_dir, plots_dir, purge_periods, active_periods):
         df_psu = pd.read_csv(psu_path, parse_dates=['timestamp'])
         if time_range is None:
             time_range = (df_psu['timestamp'].min(), df_psu['timestamp'].max())
+        # Decimate for plotting
+        df_psu_plot = decimate_for_plot(df_psu)
         if 'voltage' in df_psu.columns and 'set_voltage_rb' in df_psu.columns:
-            ax.plot(df_psu['timestamp'], df_psu['voltage'], label='PSU Actual', linewidth=1.5, color='green')
-            ax.plot(df_psu['timestamp'], df_psu['set_voltage_rb'], label='PSU Set', linewidth=1.5, color='orange', linestyle='--')
+            ax.plot(df_psu_plot['timestamp'], df_psu_plot['voltage'], label='PSU Actual', linewidth=1.5, color='green')
+            ax.plot(df_psu_plot['timestamp'], df_psu_plot['set_voltage_rb'], label='PSU Set', linewidth=1.5, color='orange', linestyle='--')
             plotted += 2
     
     if plotted == 0:
@@ -718,11 +570,14 @@ def plot_power(test_dir, plots_dir, purge_periods, active_periods):
         print("  [!] No power data")
         return
     
+    # Decimate for plotting (full data preserved in CSV)
+    df_plot = decimate_for_plot(df)
+    
     fig, ax = plt.subplots(figsize=FIGURE_SIZE)
     add_shading(ax, purge_periods, active_periods)
     
     # Plot power (convert W to kW)
-    ax.plot(df['timestamp'], df['power'] / 1000, linewidth=1.5, color='green')
+    ax.plot(df_plot['timestamp'], df_plot['power'] / 1000, linewidth=1.5, color='green')
     
     ax.set_xlabel('Time')
     ax.set_ylabel('Power [kW]')

@@ -10,16 +10,18 @@
 **✅ Phase 4 Complete:** Grafana Dashboards (Tasks 41-45)
 **✅ Phase 3B Complete:** BGA Integration (Tasks 56-61)
 **✅ Phase 5 Complete:** Data Export/Analysis (Tasks 46-53)
-**🔜 Next:** Final polish and documentation
+**🔜 Phase 5B In Progress:** Data Export Enhancements (Tasks 71-80)
+**🔜 Next:** Full-resolution export, standalone scripts, enhanced documentation
 
 **System Status:**
 - ✅ All hardware bridges running as Windows services (NI analog, Pico TC-08, PSU, BGA01/02/03)
 - ✅ Docker stack operational (InfluxDB, Telegraf, Grafana)
-- ✅ Data flowing: 16 analog inputs (20Hz) + 8 thermocouples (1Hz) + PSU (10Hz) + 3 BGAs (2Hz)
+- ✅ Data flowing: 16 analog inputs (1000Hz) + 8 thermocouples (1Hz) + PSU (8Hz) + 3 BGAs (2Hz)
 - ✅ GUI functional: Relay control (16 relays) + PSU control (V/I/Ramp/Profile) + Purge button (RL04/RL06)
 - ✅ Grafana dashboards: Analog inputs, Thermocouples, PSU, BGAs, Pressures, Flowrate, Current, Voltage, Power
 - ✅ Data export: GUI "Save Data..." button → CSV + plots with sensor labels
 - ✅ sensor_labels.yaml: Easy per-test configuration (labels, units, ranges, gas configs)
+- 🔜 Pending: Full-resolution export (no downsampling), standalone reproducible scripts, enhanced info document
 
 ---
 
@@ -481,6 +483,93 @@
     - Document standalone vs GUI export
     - Document file structure (CSVs, plots, config)
     - Document test_config.py configuration options
+
+---
+
+### Phase 5B: Data Export Enhancements (71-80)
+
+**Goal**: Full-resolution data export with reproducible standalone scripts and comprehensive documentation.
+
+71. ✅ **Remove downsampling from export_csv.py**
+    - Removed `aggregateWindow()` from all Flux queries
+    - Export raw data at native sample rates (configured in devices.yaml)
+    - Removed DOWNSAMPLE_* variables from test_config.py
+    - Updated export_csv.py function signatures
+    - Updated process_test.py to remove downsampling references
+
+72. ✅ **Update plot_data.py for full-resolution data**
+    - Added `decimate_for_plot()` helper function with adaptive sampling
+    - MAX_PLOT_POINTS = 10,000 (configurable)
+    - Applied decimation to all plot functions (analog, pressures, flowrates, current, voltage, power, temperatures, BGA)
+    - Removed 135 lines of dead code (old duplicate functions with undefined references)
+    - Plots render fast regardless of input size (1 min to 8 hours)
+
+73. **Create test_info.md template**
+    - Design human-readable Markdown document structure:
+      - Test metadata (name, start/stop times, timezone)
+      - Sensor configuration summary (from sensor_labels.yaml):
+        - Analog inputs: channel → label, unit, range
+        - Thermocouples: channel → label
+        - BGAs: ID → label, gas config
+        - Relays: channel → label
+      - Hardware summary (from devices.yaml):
+        - Sample rates per measurement
+        - Device names/IPs (non-sensitive)
+      - Export timestamps:
+        - CSV export date/time
+        - Plot export date/time
+    - Template should be clear and self-documenting
+
+74. **Update process_test.py to generate test_info.md**
+    - Read sensor_labels.yaml and extract relevant fields
+    - Read devices.yaml and extract relevant fields (sample rates, device info)
+    - Generate test_info.md with CSV export timestamp
+    - Replace current test_config.json and devices.yaml copy
+
+75. **Create standalone export_csv.py for export folder**
+    - Self-contained script (no imports from MK1_AWE/gui/)
+    - Hardcoded test parameters (start/stop times, test name)
+    - Hardcoded InfluxDB connection (URL, org, bucket)
+    - Reads token from environment variable
+    - When run: regenerates all CSVs, updates "CSV export date" in test_info.md
+    - Include usage instructions in script header
+
+76. **Create standalone plot_data.py for export folder**
+    - Self-contained script (no imports from MK1_AWE/gui/)
+    - Reads CSVs from ./csv/ folder
+    - Hardcoded plot parameters (labels, colors, ranges)
+    - When run: regenerates all plots, updates "Plot export date" in test_info.md
+    - Include usage instructions in script header
+
+77. **Update export folder structure**
+    - New structure:
+      ```
+      YYYY-MM-DD_TestName/
+      ├── test_info.md        # Combined info document
+      ├── export_csv.py       # Standalone CSV script
+      ├── plot_data.py        # Standalone plot script
+      ├── csv/                # CSV files
+      └── plots/              # Plot images
+      ```
+    - Update process_test.py to create this structure
+    - Remove old test_config.json and devices.yaml copy
+
+78. **Test standalone script reproducibility**
+    - Run process_test.py to create export folder
+    - Delete csv/ folder contents
+    - Run export_csv.py from export folder - verify CSVs regenerated
+    - Delete plots/ folder contents
+    - Run plot_data.py from export folder - verify plots regenerated
+    - Verify test_info.md timestamps update correctly
+
+79. **Update GUI export dialog for new structure**
+    - Ensure export dialog triggers updated process_test.py
+    - Verify new folder structure created correctly
+    - Test end-to-end: GUI → export folder with all components
+
+80. **Plot cosmetic improvements** (PLACEHOLDER - details TBD)
+    - Placeholder for future plot styling changes
+    - User will specify requirements later
 
 ---
 

@@ -24,9 +24,7 @@ except ImportError:
 
 # Import configuration from single source of truth
 from test_config import (
-    TEST_NAME, START_TIME, STOP_TIME, START_TIME_UTC, STOP_TIME_UTC,
-    DOWNSAMPLE_AIX, DOWNSAMPLE_TC, DOWNSAMPLE_PSU, DOWNSAMPLE_BGA, DOWNSAMPLE_RL,
-    DOWNSAMPLE_FUNCTION
+    TEST_NAME, START_TIME, STOP_TIME, START_TIME_UTC, STOP_TIME_UTC
 )
 import pandas as pd
 
@@ -39,9 +37,9 @@ from config_loader import get_influx_params, load_sensor_labels
 
 
 def export_sensor_group(client, influx_params, output_dir, date_str, 
-                        measurement, channels, downsample_window, filename_suffix, 
+                        measurement, channels, filename_suffix, 
                         field_name=None, use_channel_tag=False, use_labels=False):
-    """Export a group of related sensors to a single CSV
+    """Export a group of related sensors to a single CSV (full resolution, no downsampling)
     
     Args:
         measurement: InfluxDB measurement name
@@ -60,18 +58,16 @@ from(bucket: "{influx_params['bucket']}")
   |> filter(fn: (r) => r._measurement == "{measurement}")
   |> filter(fn: (r) => r._field == "{field_name}")
   |> filter(fn: (r) => {channel_filter})
-  |> aggregateWindow(every: {downsample_window}, fn: {DOWNSAMPLE_FUNCTION}, createEmpty: false)
   |> pivot(rowKey:["_time"], columnKey: ["channel"], valueColumn: "_value")
 '''
     else:
         # For measurements like ni_relays, psu that use field names directly
         field_filter = ' or '.join([f'r._field == "{f}"' for f in channels])
-    query = f'''
+        query = f'''
 from(bucket: "{influx_params['bucket']}")
   |> range(start: {START_TIME_UTC}, stop: {STOP_TIME_UTC})
   |> filter(fn: (r) => r._measurement == "{measurement}")
   |> filter(fn: (r) => {field_filter})
-  |> aggregateWindow(every: {downsample_window}, fn: {DOWNSAMPLE_FUNCTION}, createEmpty: false)
   |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
 '''
     
@@ -136,8 +132,8 @@ from(bucket: "{influx_params['bucket']}")
 # Removed export_converted_sensors - Gen3 exports raw data only
 
 
-def export_bga_data(client, influx_params, output_dir, date_str, downsample_window):
-    """Export BGA data with multiple fields per device"""
+def export_bga_data(client, influx_params, output_dir, date_str):
+    """Export BGA data with multiple fields per device (full resolution, no downsampling)"""
     
     print(f"\nExporting BGA data...")
     
@@ -157,7 +153,6 @@ from(bucket: "{influx_params['bucket']}")
                        r._field == "uncertainty" or
                        r._field == "temperature" or
                        r._field == "pressure")
-  |> aggregateWindow(every: {downsample_window}, fn: {DOWNSAMPLE_FUNCTION}, createEmpty: false)
   |> keep(columns: ["_time", "_field", "_value", "primary_gas", "secondary_gas"])
 '''
             
@@ -239,24 +234,24 @@ def export_data():
         # Export analog inputs (AI01-AI16) - raw mA values from ni_analog measurement
         ai_channels = [f"AI{i:02d}" for i in range(1, 17)]
         export_sensor_group(client, influx_params, output_dir, date_str,
-                          "ni_analog", ai_channels, DOWNSAMPLE_AIX, "AIX",
+                          "ni_analog", ai_channels, "AIX",
                           field_name="raw_ma", use_channel_tag=True)
         
         # Export analog inputs (AI01-AI16) - converted engineering units
         export_sensor_group(client, influx_params, output_dir, date_str,
-                          "ni_analog", ai_channels, DOWNSAMPLE_AIX, "AIX_converted",
+                          "ni_analog", ai_channels, "AIX_converted",
                           field_name="value", use_channel_tag=True, use_labels=True)
         
         # Export thermocouples (TC01-TC08) from tc08 measurement
         tc_channels = [f"TC{i:02d}" for i in range(1, 9)]
         export_sensor_group(client, influx_params, output_dir, date_str,
-                          "tc08", tc_channels, DOWNSAMPLE_TC, "TC",
+                          "tc08", tc_channels, "TC",
                           field_name="temp_c", use_channel_tag=True, use_labels=True)
         
         # Export relays (RL01-RL16) from ni_relays measurement
         rl_fields = [f"RL{i:02d}" for i in range(1, 17)]
         export_sensor_group(client, influx_params, output_dir, date_str,
-                          "ni_relays", rl_fields, DOWNSAMPLE_RL, "RL",
+                          "ni_relays", rl_fields, "RL",
                           use_channel_tag=False)
         
         # Export PSU data (all fields in single CSV)
@@ -264,11 +259,11 @@ def export_data():
                       "battery_v", "temperature", "status", "sys_fault", "mod_fault",
                       "set_voltage_rb", "set_current_rb", "output_enable"]
         export_sensor_group(client, influx_params, output_dir, date_str,
-                          "psu", psu_fields, DOWNSAMPLE_PSU, "PSU",
+                          "psu", psu_fields, "PSU",
                           use_channel_tag=False)
         
         # Export BGA data (separate per device)
-        export_bga_data(client, influx_params, output_dir, date_str, DOWNSAMPLE_BGA)
+        export_bga_data(client, influx_params, output_dir, date_str)
         
         print(f"\n{'=' * 60}")
         print(f"[OK] Export complete: {test_dir}")

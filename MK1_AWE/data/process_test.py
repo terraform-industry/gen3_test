@@ -15,8 +15,7 @@ from datetime import datetime
 # All configuration now in test_config.py - edit that file!
 from test_config import (
     TEST_NAME, START_TIME, STOP_TIME, START_TIME_UTC, STOP_TIME_UTC,
-    DOWNSAMPLE_AIX, DOWNSAMPLE_TC, DOWNSAMPLE_PSU, DOWNSAMPLE_BGA, DOWNSAMPLE_RL,
-    DOWNSAMPLE_FUNCTION, PLOT_DPI, PLOT_FORMAT, FIGURE_SIZE
+    PLOT_DPI, PLOT_FORMAT, FIGURE_SIZE
 )
 
 
@@ -65,14 +64,6 @@ def save_test_config(output_dir):
             'stop_time_utc': STOP_TIME_UTC,
             'timezone': str(START_TIME.tzinfo),
             'processed_at': datetime.now().isoformat()
-        },
-        'downsampling': {
-            'AIX': DOWNSAMPLE_AIX,
-            'TC': DOWNSAMPLE_TC,
-            'PSU': DOWNSAMPLE_PSU,
-            'BGA': DOWNSAMPLE_BGA,
-            'RL': DOWNSAMPLE_RL,
-            'function': DOWNSAMPLE_FUNCTION
         },
         'plot_settings': {
             'dpi': PLOT_DPI,
