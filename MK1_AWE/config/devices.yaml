@@ -241,7 +241,7 @@ system:
 bridges:
   ni_analog:
     port: 8881
-    sample_rate: 250    # Hz - writes directly to InfluxDB (bypasses Telegraf)
+    sample_rate: 1000    # Hz - writes directly to InfluxDB (bypasses Telegraf)
     hw_max_rate: 2500   # Hz - NI-9253 via Ethernet (proven in ni_test.py)
     buffer_seconds: 2   # seconds of samples to buffer
   pico_tc08:
