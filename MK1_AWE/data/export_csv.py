@@ -66,7 +66,7 @@ from(bucket: "{influx_params['bucket']}")
     else:
         # For measurements like ni_relays, psu that use field names directly
         field_filter = ' or '.join([f'r._field == "{f}"' for f in channels])
-        query = f'''
+    query = f'''
 from(bucket: "{influx_params['bucket']}")
   |> range(start: {START_TIME_UTC}, stop: {STOP_TIME_UTC})
   |> filter(fn: (r) => r._measurement == "{measurement}")

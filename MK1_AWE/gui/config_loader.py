@@ -153,14 +153,14 @@ def get_sensor_conversions():
         # Slot 4 channels (AI09-AI16)
         for channel_id, hw_config in ni_analog.get('slot_4', {}).items():
             label_config = ai_labels.get(channel_id, {})
-            conversions[channel_id] = {
+        conversions[channel_id] = {
                 'min_mA': hw_config['range_min'] * 1000,
                 'max_mA': hw_config['range_max'] * 1000,
                 'min_eng': label_config.get('eng_min', 0.0),
                 'max_eng': label_config.get('eng_max', 100.0),
                 'unit': label_config.get('eng_unit', 'units'),
                 'label': label_config.get('label', channel_id)
-            }
+        }
     except KeyError:
         pass
     

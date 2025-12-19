@@ -684,7 +684,7 @@ def plot_voltage(test_dir, plots_dir, purge_periods, active_periods):
     ax.set_xlabel('Time')
     ax.set_ylabel('Voltage [V]')
     ax.set_title('Voltage')
-    ax.set_ylim(0, 320)
+    ax.set_ylim(0, 900)
     if time_range:
         ax.set_xlim(time_range[0], time_range[1])
     ax.grid(True, alpha=0.3)

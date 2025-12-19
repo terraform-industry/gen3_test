@@ -515,7 +515,7 @@ class PSUPanel(QWidget):
             if self.mode == 'gen3' and self.ramp_voltage is not None:
                 set_current(target_current, voltage=self.ramp_voltage)
             else:
-                set_current(target_current)
+            set_current(target_current)
             
             self.current_setpoint = target_current
             self.current_changed.emit(target_current)
@@ -658,7 +658,7 @@ class PSUPanel(QWidget):
             if self.mode == 'gen3' and self.profile_voltage is not None:
                 set_current(target_current, voltage=self.profile_voltage)
             else:
-                set_current(target_current)
+            set_current(target_current)
             
             self.current_setpoint = target_current
             self.current_changed.emit(target_current)
@@ -747,7 +747,7 @@ class PSUPanel(QWidget):
                     from psu_rtu_client import safe_shutdown
                 safe_shutdown()
             else:
-                stop()
+            stop()
             
             # Update tracking
             self.current_setpoint = 0.0

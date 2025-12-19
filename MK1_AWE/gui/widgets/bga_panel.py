@@ -126,11 +126,11 @@ class BGAPanel(QWidget):
             success_count += 1
         except Exception as e:
             print(f"  BGA02 init failed: {e}")
-        
+            
         # BGA03
         try:
             set_primary_gas('BGA03', self.bga03_gases['primary'])
-            time.sleep(0.05)
+                time.sleep(0.05)
             set_secondary_gas('BGA03', self.bga03_gases['secondary'])
             success_count += 1
         except Exception as e:

@@ -161,7 +161,7 @@ class MainWindow(QMainWindow):
         
         # Track PSU connection (but don't auto-initialize - user controls it)
         if psu_online and 'PSU' not in self.initialized_devices:
-            self.initialized_devices.add('PSU')
+                self.initialized_devices.add('PSU')
             print("PSU online - user can control via GUI")
         elif not psu_online and 'PSU' in self.initialized_devices:
             self.initialized_devices.discard('PSU')

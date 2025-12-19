@@ -74,8 +74,8 @@ class StatusWorker(QThread):
             device_names = [device.name for device in system.devices]
             return device_name in device_names
         except Exception:
-            return False
-    
+                return False
+            
     def _check_http_bridge(self, port):
         """Check if HTTP bridge is responding"""
         try:
@@ -83,7 +83,7 @@ class StatusWorker(QThread):
             if response.status_code == 200:
                 data = response.json()
                 return data.get('device_online', False)
-            return False
+                return False
         except Exception:
             return False
 
