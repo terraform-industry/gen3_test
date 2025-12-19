@@ -16,7 +16,7 @@ import os
 
 # Add path to import config_loader
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'gui'))
-from config_loader import load_sensor_labels, load_devices_config
+from config_loader import load_sensor_labels, load_config
 
 
 def generate_test_info_md(
@@ -43,7 +43,7 @@ def generate_test_info_md(
     
     # Load configurations
     sensor_labels = load_sensor_labels()
-    devices_config = load_devices_config()
+    devices_config = load_config()
     
     # Format times
     tz_name = str(start_time.tzinfo)

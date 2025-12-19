@@ -13,7 +13,7 @@ import os
 
 # Add path to import config_loader
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'gui'))
-from config_loader import load_sensor_labels, get_influx_params
+from config_loader import load_sensor_labels, get_influx_params, load_config
 
 
 def generate_standalone_export_csv(
