@@ -17,6 +17,10 @@ warnings.simplefilter("ignore", MissingPivotFunction)
 # Query chunk size (minutes) - prevents timeout/memory issues with large datasets
 QUERY_CHUNK_MINUTES = 5
 
+# Max export sample rate (Hz) - sensors faster than this get downsampled
+MAX_EXPORT_RATE_HZ = 10
+DOWNSAMPLE_WINDOW = f"{int(1000 / MAX_EXPORT_RATE_HZ)}ms"  # "100ms" for 10 Hz
+
 # Load .env file if it exists
 try:
     from dotenv import load_dotenv
@@ -42,8 +46,9 @@ from config_loader import get_influx_params, load_sensor_labels
 
 def export_sensor_group(client, influx_params, output_dir, date_str, 
                         measurement, channels, filename_suffix, 
-                        field_name=None, use_channel_tag=False, use_labels=False):
-    """Export a group of related sensors to a single CSV (full resolution, no downsampling)
+                        field_name=None, use_channel_tag=False, use_labels=False,
+                        downsample=False):
+    """Export a group of related sensors to a single CSV.
     
     Queries data in time chunks to handle large datasets without timeout/memory issues.
     
@@ -53,9 +58,11 @@ def export_sensor_group(client, influx_params, output_dir, date_str,
         field_name: Field to extract (if using channel tags), e.g., 'raw_ma', 'temp_c'
         use_channel_tag: If True, filter by channel tag instead of field name
         use_labels: If True, rename columns using sensor_labels.yaml
+        downsample: If True, downsample to MAX_EXPORT_RATE_HZ (10 Hz) using mean aggregation
     """
     
-    print(f"\nExporting {filename_suffix}...")
+    ds_info = f" (downsampled to {MAX_EXPORT_RATE_HZ} Hz)" if downsample else " (full resolution)"
+    print(f"\nExporting {filename_suffix}...{ds_info}")
     
     try:
         # Query data in chunks to avoid timeout/memory issues
@@ -71,6 +78,9 @@ def export_sensor_group(client, influx_params, output_dir, date_str,
             start_utc = chunk_start.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:00', 'Z')
             end_utc = chunk_end.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:00', 'Z')
             
+            # Build aggregateWindow line if downsampling
+            agg_line = f'  |> aggregateWindow(every: {DOWNSAMPLE_WINDOW}, fn: mean, createEmpty: false)\n' if downsample else ''
+            
             if use_channel_tag and field_name:
                 # For measurements like ni_analog, tc08 that use channel tags
                 channel_filter = ' or '.join([f'r.channel == "{ch}"' for ch in channels])
@@ -80,7 +90,7 @@ from(bucket: "{influx_params['bucket']}")
   |> filter(fn: (r) => r._measurement == "{measurement}")
   |> filter(fn: (r) => r._field == "{field_name}")
   |> filter(fn: (r) => {channel_filter})
-  |> pivot(rowKey:["_time"], columnKey: ["channel"], valueColumn: "_value")
+{agg_line}  |> pivot(rowKey:["_time"], columnKey: ["channel"], valueColumn: "_value")
 '''
             else:
                 # For measurements like ni_relays, psu that use field names directly
@@ -90,7 +100,7 @@ from(bucket: "{influx_params['bucket']}")
   |> range(start: {start_utc}, stop: {end_utc})
   |> filter(fn: (r) => r._measurement == "{measurement}")
   |> filter(fn: (r) => {field_filter})
-  |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+{agg_line}  |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
 '''
             
             df_chunk = client.query_api().query_data_frame(query)
@@ -298,15 +308,16 @@ def export_data():
     
     try:
         # Export analog inputs (AI01-AI16) - raw mA values from ni_analog measurement
+        # NI analog runs at 1000 Hz, downsample to 10 Hz for manageable file size
         ai_channels = [f"AI{i:02d}" for i in range(1, 17)]
         export_sensor_group(client, influx_params, output_dir, date_str,
                           "ni_analog", ai_channels, "AIX",
-                          field_name="raw_ma", use_channel_tag=True)
+                          field_name="raw_ma", use_channel_tag=True, downsample=True)
         
         # Export analog inputs (AI01-AI16) - converted engineering units
         export_sensor_group(client, influx_params, output_dir, date_str,
                           "ni_analog", ai_channels, "AIX_converted",
-                          field_name="value", use_channel_tag=True, use_labels=True)
+                          field_name="value", use_channel_tag=True, use_labels=True, downsample=True)
         
         # Export thermocouples (TC01-TC08) from tc08 measurement
         tc_channels = [f"TC{i:02d}" for i in range(1, 9)]
