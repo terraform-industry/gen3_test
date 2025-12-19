@@ -37,9 +37,14 @@ STOP_TIME_UTC = STOP_TIME.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:0
 # Sensor Conversions (loaded from devices.yaml)
 SENSOR_CONVERSIONS = get_sensor_conversions()
 
+# Export Downsampling Settings
+# Sensors faster than MAX_EXPORT_RATE_HZ get downsampled (e.g., NI analog 1000Hz → 10Hz)
+MAX_EXPORT_RATE_HZ = 10
+DOWNSAMPLE_WINDOW = f"{int(1000 / MAX_EXPORT_RATE_HZ)}ms"  # "100ms" for 10 Hz
+
 # Plot Settings
 PLOT_DPI = 300
 PLOT_FORMAT = 'jpg'
 FIGURE_SIZE = (12, 6)
-MAX_PLOT_POINTS = 10000  # Decimate data for fast plotting (display only, CSVs unaffected)
+MAX_PLOT_POINTS = 50000  # Higher threshold now that data is downsampled (10 Hz max)
 

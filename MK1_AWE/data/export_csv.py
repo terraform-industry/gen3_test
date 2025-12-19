@@ -2,7 +2,6 @@
 """Export Gen3 AWE InfluxDB data to CSV. Configuration in test_config.py"""
 
 from influxdb_client import InfluxDBClient
-from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 import sys
@@ -13,13 +12,6 @@ from influxdb_client.client.warnings import MissingPivotFunction
 
 # Suppress influxdb_client warnings about pivot function
 warnings.simplefilter("ignore", MissingPivotFunction)
-
-# Query chunk size (minutes) - prevents timeout/memory issues with large datasets
-QUERY_CHUNK_MINUTES = 5
-
-# Max export sample rate (Hz) - sensors faster than this get downsampled
-MAX_EXPORT_RATE_HZ = 10
-DOWNSAMPLE_WINDOW = f"{int(1000 / MAX_EXPORT_RATE_HZ)}ms"  # "100ms" for 10 Hz
 
 # Load .env file if it exists
 try:
@@ -32,7 +24,8 @@ except ImportError:
 
 # Import configuration from single source of truth
 from test_config import (
-    TEST_NAME, START_TIME, STOP_TIME
+    TEST_NAME, START_TIME, STOP_TIME,
+    MAX_EXPORT_RATE_HZ, DOWNSAMPLE_WINDOW
 )
 import pandas as pd
 
@@ -50,8 +43,6 @@ def export_sensor_group(client, influx_params, output_dir, date_str,
                         downsample=False):
     """Export a group of related sensors to a single CSV.
     
-    Queries data in time chunks to handle large datasets without timeout/memory issues.
-    
     Args:
         measurement: InfluxDB measurement name
         channels: List of channel names
@@ -65,62 +56,44 @@ def export_sensor_group(client, influx_params, output_dir, date_str,
     print(f"\nExporting {filename_suffix}...{ds_info}")
     
     try:
-        # Query data in chunks to avoid timeout/memory issues
-        all_dfs = []
-        chunk_start = START_TIME
-        chunk_delta = timedelta(minutes=QUERY_CHUNK_MINUTES)
-        chunk_count = 0
+        # Convert time range to UTC for InfluxDB
+        start_utc = START_TIME.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:00', 'Z')
+        stop_utc = STOP_TIME.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:00', 'Z')
         
-        while chunk_start < STOP_TIME:
-            chunk_end = min(chunk_start + chunk_delta, STOP_TIME)
-            
-            # Convert to UTC ISO format for InfluxDB
-            start_utc = chunk_start.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:00', 'Z')
-            end_utc = chunk_end.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:00', 'Z')
-            
-            # Build aggregateWindow line if downsampling
-            agg_line = f'  |> aggregateWindow(every: {DOWNSAMPLE_WINDOW}, fn: mean, createEmpty: false)\n' if downsample else ''
-            
-            if use_channel_tag and field_name:
-                # For measurements like ni_analog, tc08 that use channel tags
-                channel_filter = ' or '.join([f'r.channel == "{ch}"' for ch in channels])
-                query = f'''
+        # Build aggregateWindow line if downsampling
+        agg_line = f'  |> aggregateWindow(every: {DOWNSAMPLE_WINDOW}, fn: mean, createEmpty: false)\n' if downsample else ''
+        
+        if use_channel_tag and field_name:
+            # For measurements like ni_analog, tc08 that use channel tags
+            channel_filter = ' or '.join([f'r.channel == "{ch}"' for ch in channels])
+            query = f'''
 from(bucket: "{influx_params['bucket']}")
-  |> range(start: {start_utc}, stop: {end_utc})
+  |> range(start: {start_utc}, stop: {stop_utc})
   |> filter(fn: (r) => r._measurement == "{measurement}")
   |> filter(fn: (r) => r._field == "{field_name}")
   |> filter(fn: (r) => {channel_filter})
 {agg_line}  |> pivot(rowKey:["_time"], columnKey: ["channel"], valueColumn: "_value")
 '''
-            else:
-                # For measurements like ni_relays, psu that use field names directly
-                field_filter = ' or '.join([f'r._field == "{f}"' for f in channels])
-                query = f'''
+        else:
+            # For measurements like ni_relays, psu that use field names directly
+            field_filter = ' or '.join([f'r._field == "{f}"' for f in channels])
+            query = f'''
 from(bucket: "{influx_params['bucket']}")
-  |> range(start: {start_utc}, stop: {end_utc})
+  |> range(start: {start_utc}, stop: {stop_utc})
   |> filter(fn: (r) => r._measurement == "{measurement}")
   |> filter(fn: (r) => {field_filter})
 {agg_line}  |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
 '''
-            
-            df_chunk = client.query_api().query_data_frame(query)
-            
-            if not df_chunk.empty:
-                # Handle case where query returns list of DataFrames
-                if isinstance(df_chunk, list):
-                    df_chunk = pd.concat(df_chunk, ignore_index=True)
-                all_dfs.append(df_chunk)
-                chunk_count += 1
-            
-            chunk_start = chunk_end
         
-        if not all_dfs:
+        df = client.query_api().query_data_frame(query)
+        
+        # Handle case where query returns list of DataFrames
+        if isinstance(df, list):
+            df = pd.concat(df, ignore_index=True)
+        
+        if df.empty:
             print(f"  [!] No data found")
             return None
-        
-        # Concatenate all chunks
-        df = pd.concat(all_dfs, ignore_index=True)
-        print(f"  Queried {chunk_count} chunks, {len(df)} total rows")
         
         # Keep only timestamp and data columns
         keep_cols = ['_time'] + [col for col in df.columns if col in channels]
@@ -169,7 +142,6 @@ from(bucket: "{influx_params['bucket']}")
         
     except Exception as e:
         print(f"  [ERROR] {e}")
-        import traceback
         traceback.print_exc()
         return None
 
@@ -178,35 +150,24 @@ from(bucket: "{influx_params['bucket']}")
 
 
 def export_bga_data(client, influx_params, output_dir, date_str):
-    """Export BGA data with multiple fields per device (full resolution, no downsampling)
+    """Export BGA data with multiple fields per device (full resolution - BGAs are 2 Hz)"""
     
-    Queries data in time chunks to handle large datasets without timeout/memory issues.
-    """
-    
-    print(f"\nExporting BGA data...")
+    print(f"\nExporting BGA data... (full resolution)")
     
     # Load labels for BGA naming
     labels = load_sensor_labels()
     bga_labels = labels.get('bgas', {})
     
+    # Convert time range to UTC for InfluxDB
+    start_utc = START_TIME.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:00', 'Z')
+    stop_utc = STOP_TIME.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:00', 'Z')
+    
     try:
         # Export each BGA separately to avoid duplicate rows
         for bga_id in ['BGA01', 'BGA02', 'BGA03']:
-            # Query in chunks
-            all_dfs = []
-            chunk_start = START_TIME
-            chunk_delta = timedelta(minutes=QUERY_CHUNK_MINUTES)
-            
-            while chunk_start < STOP_TIME:
-                chunk_end = min(chunk_start + chunk_delta, STOP_TIME)
-                
-                # Convert to UTC ISO format
-                start_utc = chunk_start.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:00', 'Z')
-                end_utc = chunk_end.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:00', 'Z')
-                
-                query = f'''
+            query = f'''
 from(bucket: "{influx_params['bucket']}")
-  |> range(start: {start_utc}, stop: {end_utc})
+  |> range(start: {start_utc}, stop: {stop_utc})
   |> filter(fn: (r) => r._measurement == "bga_metrics")
   |> filter(fn: (r) => r.bga_id == "{bga_id}")
   |> filter(fn: (r) => r._field == "purity" or 
@@ -215,33 +176,26 @@ from(bucket: "{influx_params['bucket']}")
                        r._field == "pressure")
   |> keep(columns: ["_time", "_field", "_value", "primary_gas", "secondary_gas"])
 '''
-                
-                df_chunk = client.query_api().query_data_frame(query)
-                
-                if not df_chunk.empty:
-                    # Handle case where query returns list of DataFrames
-                    if isinstance(df_chunk, list):
-                        df_chunk = pd.concat(df_chunk, ignore_index=True)
-                    all_dfs.append(df_chunk)
-                
-                chunk_start = chunk_end
             
-            if not all_dfs:
+            df = client.query_api().query_data_frame(query)
+            
+            # Handle case where query returns list of DataFrames
+            if isinstance(df, list):
+                df = pd.concat(df, ignore_index=True)
+            
+            if df.empty:
                 print(f"  [!] {bga_id}: No data found")
                 continue
-            
-            # Concatenate all chunks
-            df = pd.concat(all_dfs, ignore_index=True)
             
             # Pivot manually using pandas (more reliable than Flux pivot with tags)
             df_pivot = df.pivot_table(
                 index='_time',
                 columns='_field',
                 values='_value',
-                aggfunc='first'  # Take first value if duplicates
+                aggfunc='first'
             ).reset_index()
             
-            # Add gas info from the original df (take most common value per timestamp)
+            # Add gas info from the original df
             if 'primary_gas' in df.columns and 'secondary_gas' in df.columns:
                 gas_info = df.groupby('_time')[['primary_gas', 'secondary_gas']].first().reset_index()
                 df_pivot = df_pivot.merge(gas_info, on='_time', how='left')
@@ -254,7 +208,7 @@ from(bucket: "{influx_params['bucket']}")
             df_pivot['_time'] = df_pivot['_time'].dt.strftime('%Y-%m-%d %H:%M:%S.%f').str[:-3]
             df_pivot.rename(columns={'_time': 'timestamp'}, inplace=True)
             
-            # Save to CSV with proper float formatting (use label in filename if available)
+            # Save to CSV with proper float formatting
             bga_label_config = bga_labels.get(bga_id, {})
             bga_label = bga_label_config.get('label', bga_id) if isinstance(bga_label_config, dict) else bga_id
             output_file = f"{date_str}_BGA_{bga_label.replace(' ', '_')}.csv"
@@ -266,7 +220,6 @@ from(bucket: "{influx_params['bucket']}")
             
     except Exception as e:
         print(f"  [ERROR] {e}")
-        import traceback
         traceback.print_exc()
 
 
