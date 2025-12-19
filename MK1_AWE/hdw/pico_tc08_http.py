@@ -2,27 +2,32 @@
 """
 Pico TC-08 Thermocouple HTTP Bridge
 Reads 8 thermocouple channels and exposes via HTTP /metrics endpoint
+Buffers samples at configured rate, dumps full buffer on /metrics request
 """
 
 import ctypes
 import yaml
 import time
 import threading
+from collections import deque
 from flask import Flask, Response
 from pathlib import Path
 
 # Configuration
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "devices.yaml"
-SAMPLE_INTERVAL_MS = 1000  # 1Hz (hardware limitation)
 RECONNECT_DELAY = 5  # seconds
 
 app = Flask(__name__)
 
 # Global state
-latest_data = {}
+sample_buffer = None  # Will be initialized as deque
 device_online = False
 data_lock = threading.Lock()
 tc08 = None
+
+# Config values loaded at startup
+SAMPLE_RATE = 1
+BUFFER_SECONDS = 2
 
 
 def load_config():
@@ -74,12 +79,27 @@ def setup_dll(dll_path):
 
 
 def read_thermocouples():
-    """Continuously read thermocouples from Pico TC-08"""
-    global latest_data, device_online, tc08
+    """Continuously read thermocouples from Pico TC-08 and buffer samples"""
+    global sample_buffer, device_online, tc08, SAMPLE_RATE, BUFFER_SECONDS
     
     config = load_config()
     dll_path = config['devices']['Pico_TC08']['dll_path']
     channels_config = config['modules']['Pico_TC08_Channels']
+    
+    # Load bridge config
+    bridge_config = config.get('bridges', {}).get('pico_tc08', {})
+    SAMPLE_RATE = bridge_config.get('sample_rate', 1)
+    BUFFER_SECONDS = bridge_config.get('buffer_seconds', 2)
+    
+    # Initialize ring buffer with max size
+    max_samples = SAMPLE_RATE * BUFFER_SECONDS
+    sample_buffer = deque(maxlen=max_samples)
+    
+    # Calculate sample interval in ms (hardware minimum is 1000ms)
+    sample_interval_ms = max(1000, int(1000 / SAMPLE_RATE))
+    
+    print(f"Sample rate: {SAMPLE_RATE} Hz")
+    print(f"Buffer size: {max_samples} samples ({BUFFER_SECONDS}s)")
     
     tc08 = setup_dll(dll_path)
     
@@ -91,7 +111,7 @@ def read_thermocouples():
             if handle <= 0:
                 raise RuntimeError("TC-08 not found")
             
-            print(f"✓ Connected to Pico TC-08 (handle={handle})")
+            print(f"[OK] Connected to Pico TC-08 (handle={handle})")
             
             # Configure cold junction (channel 0)
             tc08.usb_tc08_set_channel(handle, 0, ctypes.c_char(b'C'))
@@ -103,7 +123,7 @@ def read_thermocouples():
                 tc08.usb_tc08_set_channel(handle, ch_num, ctypes.c_char(tc_type))
             
             # Start streaming
-            actual_interval = tc08.usb_tc08_run(handle, SAMPLE_INTERVAL_MS)
+            actual_interval = tc08.usb_tc08_run(handle, sample_interval_ms)
             if actual_interval <= 0:
                 raise RuntimeError("Failed to start streaming")
             
@@ -141,28 +161,28 @@ def read_thermocouples():
                     if -200 < temp_c < 1500:  # Valid range for K-type
                         readings[ch_name] = {
                             'value': temp_c,
-                            'unit': '°C',
                             'type': ch_config['type'],
                             'valid': True
                         }
                     else:
                         readings[ch_name] = {
                             'value': None,
-                            'unit': '°C',
                             'type': ch_config['type'],
                             'valid': False
                         }
                 
-                # Update global state
+                # Add sample to buffer
                 with data_lock:
-                    latest_data['timestamp'] = time.time()
-                    latest_data['readings'] = readings
+                    sample_buffer.append({
+                        'timestamp_ns': time.time_ns(),
+                        'readings': readings
+                    })
                 
-                time.sleep(SAMPLE_INTERVAL_MS / 1000.0)
+                time.sleep(sample_interval_ms / 1000.0)
         
         except Exception as e:
             device_online = False
-            print(f"✗ Device offline: {e}")
+            print(f"[ERROR] Device offline: {e}")
             
             # Clean up
             if handle and handle > 0:
@@ -178,24 +198,27 @@ def read_thermocouples():
 
 @app.route('/metrics')
 def metrics():
-    """Return metrics in InfluxDB line protocol format"""
+    """Return all buffered metrics in InfluxDB line protocol format, then clear buffer"""
     if not device_online:
         return Response("# Device offline\n", status=503, mimetype='text/plain')
     
     with data_lock:
-        if 'readings' not in latest_data:
+        if sample_buffer is None or len(sample_buffer) == 0:
             return Response("# No data yet\n", status=503, mimetype='text/plain')
         
-        readings = latest_data['readings']
-        timestamp = latest_data['timestamp']
+        # Grab all buffered samples and clear
+        samples = list(sample_buffer)
+        sample_buffer.clear()
     
-    # Build InfluxDB line protocol
+    # Build InfluxDB line protocol - one line per channel per sample
     lines = []
-    for ch_name, data in readings.items():
-        if data['valid']:
-            # Format: measurement,tag1=value1 field1=value1 timestamp
-            line = f"tc08,channel={ch_name},type={data['type']} temp_c={data['value']:.2f} {int(timestamp * 1e9)}"
-            lines.append(line)
+    for sample in samples:
+        timestamp_ns = sample['timestamp_ns']
+        for ch_name, data in sample['readings'].items():
+            if data['valid']:
+                # Format: measurement,tag1=value1 field1=value1 timestamp
+                line = f"tc08,channel={ch_name},type={data['type']} temp_c={data['value']:.2f} {timestamp_ns}"
+                lines.append(line)
     
     output = '\n'.join(lines) + '\n' if lines else "# No valid readings\n"
     return Response(output, mimetype='text/plain')
@@ -203,21 +226,21 @@ def metrics():
 
 @app.route('/health')
 def health():
-    """Health check endpoint"""
+    """Health check endpoint with buffer stats"""
     status = "online" if device_online else "offline"
     
     with data_lock:
-        data_age = time.time() - latest_data.get('timestamp', 0) if latest_data else None
-        num_valid = sum(1 for r in latest_data.get('readings', {}).values() if r.get('valid', False))
-        num_total = len(latest_data.get('readings', {}))
+        buffer_size = len(sample_buffer) if sample_buffer else 0
+        buffer_max = sample_buffer.maxlen if sample_buffer else 0
     
     response = {
         'status': status,
         'device_online': device_online,
-        'data_age_seconds': data_age,
-        'valid_channels': num_valid,
-        'total_channels': num_total,
-        'sample_interval_ms': SAMPLE_INTERVAL_MS
+        'sample_rate': SAMPLE_RATE,
+        'buffer_seconds': BUFFER_SECONDS,
+        'buffer_size': buffer_size,
+        'buffer_max': buffer_max,
+        'buffer_pct': round(100 * buffer_size / buffer_max, 1) if buffer_max > 0 else 0
     }
     
     import json
@@ -226,9 +249,14 @@ def health():
 
 def main():
     """Main entry point"""
+    config = load_config()
+    bridge_config = config.get('bridges', {}).get('pico_tc08', {})
+    sample_rate = bridge_config.get('sample_rate', 1)
+    hw_max = bridge_config.get('hw_max_rate', 1)
+    
     print("Pico TC-08 Thermocouple HTTP Bridge")
     print(f"Config: {CONFIG_PATH}")
-    print(f"Sample interval: {SAMPLE_INTERVAL_MS} ms (1 Hz)")
+    print(f"Configured rate: {sample_rate} Hz (hardware max: {hw_max} Hz)")
     print(f"Endpoints: http://localhost:8882/metrics, /health")
     print()
     
@@ -242,4 +270,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

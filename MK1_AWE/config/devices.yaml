@@ -235,23 +235,40 @@ system:
   influxdb_bucket: "electrolyzer_data"
   grafana_url: "http://localhost:3000"
 
-# Hardware Bridge Ports
+# Hardware Bridge Ports and Sample Rates
+# sample_rate: configured polling rate (Hz)
+# hw_max_rate: hardware maximum (Hz) - do not exceed
 bridges:
   ni_analog:
     port: 8881
-    sample_rate: 100  # Hz
+    sample_rate: 100    # Hz - configured rate
+    hw_max_rate: 2500   # Hz - NI-9253 via Ethernet (proven in ni_test.py)
+    buffer_seconds: 2   # seconds of samples to buffer
   pico_tc08:
     port: 8882
-    sample_rate: 1    # Hz (hardware limitation)
+    sample_rate: 1      # Hz - configured rate
+    hw_max_rate: 1      # Hz - TC-08 hardware limitation
+    buffer_seconds: 2
   psu:
     port: 8883
-    sample_rate: 1    # Hz
+    sample_rate: 8      # Hz - configured rate
+    hw_max_rate: 10     # Hz - Modbus RTU serial timing limit
+    buffer_seconds: 2
   bga01:
     port: 8888
+    sample_rate: 2      # Hz - configured rate
+    hw_max_rate: 5      # Hz - serial command/response time
+    buffer_seconds: 2
   bga02:
     port: 8889
+    sample_rate: 2
+    hw_max_rate: 5
+    buffer_seconds: 2
   bga03:
     port: 8890
+    sample_rate: 2
+    hw_max_rate: 5
+    buffer_seconds: 2
 
 # PSU Control
 psu_control:

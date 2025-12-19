@@ -2,26 +2,31 @@
 """
 NI cDAQ-9187 Analog Input HTTP Bridge
 Reads 16 channels (4-20mA) from 2x NI-9253 modules and exposes via HTTP /metrics endpoint
+Buffers samples at configured rate, dumps full buffer on /metrics request
 """
 
 import nidaqmx
 import yaml
 import time
 import threading
+from collections import deque
 from flask import Flask, Response
 from pathlib import Path
 
 # Configuration
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "devices.yaml"
-SAMPLE_RATE = 10  # Hz per channel
 RECONNECT_DELAY = 5  # seconds
 
 app = Flask(__name__)
 
 # Global state
-latest_data = {}
+sample_buffer = None  # Will be initialized as deque
 device_online = False
 data_lock = threading.Lock()
+
+# Config values loaded at startup
+SAMPLE_RATE = 100
+BUFFER_SECONDS = 2
 
 
 def load_config():
@@ -47,16 +52,32 @@ def convert_to_engineering_units(current_ma, hw_config, label_config):
 
 
 def read_analog_inputs():
-    """Continuously read analog inputs from NI cDAQ"""
-    global latest_data, device_online
+    """Continuously read analog inputs from NI cDAQ and buffer samples"""
+    global sample_buffer, device_online, SAMPLE_RATE, BUFFER_SECONDS
     
     config = load_config()
     labels_config = yaml.safe_load(open(CONFIG_PATH.parent / "sensor_labels.yaml"))
+    
+    # Load bridge config
+    bridge_config = config.get('bridges', {}).get('ni_analog', {})
+    SAMPLE_RATE = bridge_config.get('sample_rate', 100)
+    BUFFER_SECONDS = bridge_config.get('buffer_seconds', 2)
+    
+    # Initialize ring buffer with max size
+    max_samples = SAMPLE_RATE * BUFFER_SECONDS
+    sample_buffer = deque(maxlen=max_samples)
     
     device_name = config['devices']['NI_cDAQ']['name']
     slot1_config = config['modules']['NI_cDAQ_Analog']['slot_1']
     slot4_config = config['modules']['NI_cDAQ_Analog']['slot_4']
     ai_labels = labels_config.get('analog_inputs', {})
+    
+    # Calculate samples per read (10 reads per second for responsive buffer)
+    samples_per_read = max(1, SAMPLE_RATE // 10)
+    
+    print(f"Sample rate: {SAMPLE_RATE} Hz")
+    print(f"Buffer size: {max_samples} samples ({BUFFER_SECONDS}s)")
+    print(f"Samples per read: {samples_per_read}")
     
     while True:
         try:
@@ -82,85 +103,97 @@ def read_analog_inputs():
                         name_to_assign_to_channel=ch_name
                     )
                 
-                # Configure timing
+                # Configure timing for continuous acquisition at configured rate
                 task.timing.cfg_samp_clk_timing(
                     rate=SAMPLE_RATE,
                     sample_mode=nidaqmx.constants.AcquisitionType.CONTINUOUS
                 )
                 
-                # Minimal buffer - only 0.5 seconds worth
-                task.in_stream.input_buf_size = int(SAMPLE_RATE * 16 * 0.5)
+                # Set buffer to hold 1 second of data (prevents overflow)
+                task.in_stream.input_buf_size = int(SAMPLE_RATE * 16 * 1)
                 
-                print(f"✓ Connected to {device_name}")
+                print(f"[OK] Connected to {device_name}")
                 device_online = True
                 
-                # Read loop
+                # Read loop - batch read for efficiency
                 while True:
-                    # Read one sample from all channels
-                    data = task.read()
+                    # Read batch of samples from all channels
+                    # Returns list of lists: [channel][sample]
+                    data = task.read(number_of_samples_per_channel=samples_per_read)
                     
-                    # Convert to engineering units
-                    readings = {}
-                    idx = 0
+                    # Get base timestamp for this batch
+                    now_ns = time.time_ns()
+                    sample_interval_ns = int(1e9 / SAMPLE_RATE)
                     
-                    # Process Slot 1
-                    for ch_name, hw_config in slot1_config.items():
-                        current_ma = data[idx] * 1000  # Convert A to mA
-                        label_config = ai_labels.get(ch_name, {})
-                        eng_value = convert_to_engineering_units(current_ma, hw_config, label_config)
-                        readings[ch_name] = {
-                            'value': eng_value,
-                            'unit': label_config.get('eng_unit', 'units'),
-                            'raw_ma': current_ma
-                        }
-                        idx += 1
-                    
-                    # Process Slot 4
-                    for ch_name, hw_config in slot4_config.items():
-                        current_ma = data[idx] * 1000
-                        label_config = ai_labels.get(ch_name, {})
-                        eng_value = convert_to_engineering_units(current_ma, hw_config, label_config)
-                        readings[ch_name] = {
-                            'value': eng_value,
-                            'unit': label_config.get('eng_unit', 'units'),
-                            'raw_ma': current_ma
-                        }
-                        idx += 1
-                    
-                    # Update global state
-                    with data_lock:
-                        latest_data['timestamp'] = time.time()
-                        latest_data['readings'] = readings
-                    
-                    # Short sleep to prevent CPU spinning (sample at ~10Hz)
-                    time.sleep(0.05)
+                    # Process each sample in the batch
+                    for sample_idx in range(samples_per_read):
+                        # Calculate timestamp for this sample
+                        # Samples are evenly spaced, work backwards from now
+                        sample_offset = (samples_per_read - 1 - sample_idx) * sample_interval_ns
+                        timestamp_ns = now_ns - sample_offset
+                        
+                        # Build readings for all channels
+                        readings = {}
+                        ch_idx = 0
+                        
+                        # Process Slot 1
+                        for ch_name, hw_config in slot1_config.items():
+                            current_ma = data[ch_idx][sample_idx] * 1000  # Convert A to mA
+                            label_config = ai_labels.get(ch_name, {})
+                            eng_value = convert_to_engineering_units(current_ma, hw_config, label_config)
+                            readings[ch_name] = {
+                                'value': eng_value,
+                                'raw_ma': current_ma
+                            }
+                            ch_idx += 1
+                        
+                        # Process Slot 4
+                        for ch_name, hw_config in slot4_config.items():
+                            current_ma = data[ch_idx][sample_idx] * 1000
+                            label_config = ai_labels.get(ch_name, {})
+                            eng_value = convert_to_engineering_units(current_ma, hw_config, label_config)
+                            readings[ch_name] = {
+                                'value': eng_value,
+                                'raw_ma': current_ma
+                            }
+                            ch_idx += 1
+                        
+                        # Add sample to buffer
+                        with data_lock:
+                            sample_buffer.append({
+                                'timestamp_ns': timestamp_ns,
+                                'readings': readings
+                            })
         
         except Exception as e:
             device_online = False
-            print(f"✗ Device offline: {e}")
+            print(f"[ERROR] Device offline: {e}")
             print(f"  Retrying in {RECONNECT_DELAY}s...")
             time.sleep(RECONNECT_DELAY)
 
 
 @app.route('/metrics')
 def metrics():
-    """Return metrics in InfluxDB line protocol format"""
+    """Return all buffered metrics in InfluxDB line protocol format, then clear buffer"""
     if not device_online:
         return Response("# Device offline\n", status=503, mimetype='text/plain')
     
     with data_lock:
-        if 'readings' not in latest_data:
+        if sample_buffer is None or len(sample_buffer) == 0:
             return Response("# No data yet\n", status=503, mimetype='text/plain')
         
-        readings = latest_data['readings']
-        timestamp = latest_data['timestamp']
+        # Grab all buffered samples and clear
+        samples = list(sample_buffer)
+        sample_buffer.clear()
     
-    # Build InfluxDB line protocol (analog inputs only)
+    # Build InfluxDB line protocol - one line per channel per sample
     lines = []
-    for ch_name, data in readings.items():
-        # Format: measurement,tag1=value1 field1=value1,field2=value2 timestamp
-        line = f"ni_analog,channel={ch_name} value={data['value']:.3f},raw_ma={data['raw_ma']:.3f} {int(timestamp * 1e9)}"
-        lines.append(line)
+    for sample in samples:
+        timestamp_ns = sample['timestamp_ns']
+        for ch_name, data in sample['readings'].items():
+            # Format: measurement,tag=value field1=value1,field2=value2 timestamp
+            line = f"ni_analog,channel={ch_name} value={data['value']:.3f},raw_ma={data['raw_ma']:.3f} {timestamp_ns}"
+            lines.append(line)
     
     output = '\n'.join(lines) + '\n'
     return Response(output, mimetype='text/plain')
@@ -168,16 +201,21 @@ def metrics():
 
 @app.route('/health')
 def health():
-    """Health check endpoint"""
+    """Health check endpoint with buffer stats"""
     status = "online" if device_online else "offline"
+    
     with data_lock:
-        data_age = time.time() - latest_data.get('timestamp', 0) if latest_data else None
+        buffer_size = len(sample_buffer) if sample_buffer else 0
+        buffer_max = sample_buffer.maxlen if sample_buffer else 0
     
     response = {
         'status': status,
         'device_online': device_online,
-        'data_age_seconds': data_age,
-        'sample_rate': SAMPLE_RATE
+        'sample_rate': SAMPLE_RATE,
+        'buffer_seconds': BUFFER_SECONDS,
+        'buffer_size': buffer_size,
+        'buffer_max': buffer_max,
+        'buffer_pct': round(100 * buffer_size / buffer_max, 1) if buffer_max > 0 else 0
     }
     
     import json
@@ -186,9 +224,14 @@ def health():
 
 def main():
     """Main entry point"""
+    config = load_config()
+    bridge_config = config.get('bridges', {}).get('ni_analog', {})
+    sample_rate = bridge_config.get('sample_rate', 100)
+    hw_max = bridge_config.get('hw_max_rate', 2500)
+    
     print("NI cDAQ Analog Input HTTP Bridge")
     print(f"Config: {CONFIG_PATH}")
-    print(f"Sample rate: {SAMPLE_RATE} Hz")
+    print(f"Configured rate: {sample_rate} Hz (hardware max: {hw_max} Hz)")
     print(f"Endpoints: http://localhost:8881/metrics, /health")
     print()
     
@@ -202,4 +245,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

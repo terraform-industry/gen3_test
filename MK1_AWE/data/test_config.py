@@ -23,12 +23,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'gui'))
 from config_loader import get_sensor_conversions
 
 # Test Info
-TEST_NAME = "CMS_Test_33"
+TEST_NAME = "Gen3_Test_1"
 
 # Time Range (Pacific Time - PT)
 # EDIT THESE for your test:
-START_TIME = datetime(2025, 12, 2, 14, 0, 30, tzinfo=ZoneInfo('America/Los_Angeles'))
-STOP_TIME = datetime(2025, 12, 2, 14, 10, 30, tzinfo=ZoneInfo('America/Los_Angeles'))
+START_TIME = datetime(2025, 11, 17, 12, 41, 30, tzinfo=ZoneInfo('America/Los_Angeles'))
+STOP_TIME = datetime(2025, 11, 17, 12, 45, 0, tzinfo=ZoneInfo('America/Los_Angeles'))
 
 # Auto-convert to UTC for InfluxDB queries
 START_TIME_UTC = START_TIME.astimezone(ZoneInfo('UTC')).isoformat().replace('+00:00', 'Z')

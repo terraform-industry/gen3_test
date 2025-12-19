@@ -2,6 +2,7 @@
 """
 PSU Modbus RTU HTTP Bridge
 Reads PSU data via RS485/USB and exposes via HTTP /metrics endpoint
+Buffers samples at configured rate, dumps full buffer on /metrics request
 """
 
 import minimalmodbus
@@ -9,21 +10,25 @@ import yaml
 import time
 import threading
 import queue
+from collections import deque
 from flask import Flask, Response, request, jsonify
 from pathlib import Path
 
 # Configuration
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "devices.yaml"
-SAMPLE_RATE = 10  # Hz
 RECONNECT_DELAY = 5  # seconds
 
 app = Flask(__name__)
 
 # Global state
-latest_data = {}
+sample_buffer = None  # Will be initialized as deque
 device_online = False
 data_lock = threading.Lock()
 command_queue = queue.Queue()
+
+# Config values loaded at startup
+SAMPLE_RATE = 8
+BUFFER_SECONDS = 2
 
 
 def load_config():
@@ -34,18 +39,29 @@ def load_config():
 
 
 def read_psu_data():
-    """Continuously read PSU data via Modbus RTU"""
-    global latest_data, device_online
+    """Continuously read PSU data via Modbus RTU and buffer samples"""
+    global sample_buffer, device_online, SAMPLE_RATE, BUFFER_SECONDS
     
     config = load_config()
     psu_config = config['devices']['PSU']
-    register_map = config['modules']['PSU_Registers']
+    
+    # Load bridge config
+    bridge_config = config.get('bridges', {}).get('psu', {})
+    SAMPLE_RATE = bridge_config.get('sample_rate', 8)
+    BUFFER_SECONDS = bridge_config.get('buffer_seconds', 2)
+    
+    # Initialize ring buffer with max size
+    max_samples = SAMPLE_RATE * BUFFER_SECONDS
+    sample_buffer = deque(maxlen=max_samples)
     
     com_port = psu_config['com_port']
     if not com_port:
-        print("✗ COM port not configured in devices.yaml")
+        print("[ERROR] COM port not configured in devices.yaml")
         print("  Set devices.PSU.com_port (e.g., 'COM11')")
         return
+    
+    print(f"Sample rate: {SAMPLE_RATE} Hz")
+    print(f"Buffer size: {max_samples} samples ({BUFFER_SECONDS}s)")
     
     while True:
         psu = None
@@ -75,26 +91,26 @@ def read_psu_data():
                             psu.write_register(0x0102, int(current / 0.1))
                             time.sleep(0.1)
                             psu.write_register(0x0103, cmd['enable'])
-                            print(f"✓ Set: {voltage:.1f}V, {current:.1f}A, {'ON' if cmd['enable'] else 'OFF'}")
+                            print(f"[OK] Set: {voltage:.1f}V, {current:.1f}A, {'ON' if cmd['enable'] else 'OFF'}")
                         
                         elif cmd_type == 'enable':
                             psu.write_register(0x0103, 1)
-                            print("✓ Output enabled")
+                            print("[OK] Output enabled")
                         
                         elif cmd_type == 'disable':
                             psu.write_register(0x0103, 0)
-                            print("✓ Output disabled")
+                            print("[OK] Output disabled")
                         
                         command_queue.task_done()
                     except Exception as e:
-                        print(f"✗ Command failed: {e}")
+                        print(f"[ERROR] Command failed: {e}")
                 
                 # Read all 13 registers at once (0x0001-0x000D)
                 raw_values = psu.read_registers(0x0001, 13)
                 
                 # Mark as online only after successful read
                 if not device_online:
-                    print(f"✓ Connected to PSU on {com_port}")
+                    print(f"[OK] Connected to PSU on {com_port}")
                     device_online = True
                 
                 # Parse registers according to map
@@ -114,53 +130,58 @@ def read_psu_data():
                     'output_enable': raw_values[12]      # 1=ON, 0=OFF
                 }
                 
-                # Update global state
+                # Add sample to buffer with timestamp
                 with data_lock:
-                    latest_data['timestamp'] = time.time()
-                    latest_data['readings'] = readings
+                    sample_buffer.append({
+                        'timestamp_ns': time.time_ns(),
+                        'readings': readings
+                    })
                 
                 time.sleep(1.0 / SAMPLE_RATE)
         
         except Exception as e:
             device_online = False
-            print(f"✗ PSU offline: {e}")
+            print(f"[ERROR] PSU offline: {e}")
             print(f"  Retrying in {RECONNECT_DELAY}s...")
             time.sleep(RECONNECT_DELAY)
 
 
 @app.route('/metrics')
 def metrics():
-    """Return metrics in InfluxDB line protocol format"""
+    """Return all buffered metrics in InfluxDB line protocol format, then clear buffer"""
     if not device_online:
         return Response("# Device offline\n", status=503, mimetype='text/plain')
     
     with data_lock:
-        if 'readings' not in latest_data:
+        if sample_buffer is None or len(sample_buffer) == 0:
             return Response("# No data yet\n", status=503, mimetype='text/plain')
         
-        readings = latest_data['readings']
-        timestamp = latest_data['timestamp']
+        # Grab all buffered samples and clear
+        samples = list(sample_buffer)
+        sample_buffer.clear()
     
-    # Build InfluxDB line protocol
+    # Build InfluxDB line protocol - one line per sample
     lines = []
-    
-    # Main measurements (voltage, current, power)
-    line = (f"psu "
-            f"voltage={readings['voltage']:.2f},"
-            f"current={readings['current']:.2f},"
-            f"power={readings['power']:.2f},"
-            f"capacity={readings['capacity']:.2f},"
-            f"runtime={readings['runtime']},"
-            f"battery_v={readings['battery_v']:.2f},"
-            f"temperature={readings['temperature']},"
-            f"status={readings['status']},"
-            f"set_voltage_rb={readings['set_voltage_rb']:.2f},"
-            f"set_current_rb={readings['set_current_rb']:.2f},"
-            f"output_enable={readings['output_enable']},"
-            f"sys_fault={readings['sys_fault']},"
-            f"mod_fault={readings['mod_fault']} "
-            f"{int(timestamp * 1e9)}")
-    lines.append(line)
+    for sample in samples:
+        readings = sample['readings']
+        timestamp_ns = sample['timestamp_ns']
+        
+        line = (f"psu "
+                f"voltage={readings['voltage']:.2f},"
+                f"current={readings['current']:.2f},"
+                f"power={readings['power']:.2f},"
+                f"capacity={readings['capacity']:.2f},"
+                f"runtime={readings['runtime']},"
+                f"battery_v={readings['battery_v']:.2f},"
+                f"temperature={readings['temperature']},"
+                f"status={readings['status']},"
+                f"set_voltage_rb={readings['set_voltage_rb']:.2f},"
+                f"set_current_rb={readings['set_current_rb']:.2f},"
+                f"output_enable={readings['output_enable']},"
+                f"sys_fault={readings['sys_fault']},"
+                f"mod_fault={readings['mod_fault']} "
+                f"{timestamp_ns}")
+        lines.append(line)
     
     output = '\n'.join(lines) + '\n'
     return Response(output, mimetype='text/plain')
@@ -168,16 +189,21 @@ def metrics():
 
 @app.route('/health')
 def health():
-    """Health check endpoint"""
+    """Health check endpoint with buffer stats"""
     status = "online" if device_online else "offline"
+    
     with data_lock:
-        data_age = time.time() - latest_data.get('timestamp', 0) if latest_data else None
+        buffer_size = len(sample_buffer) if sample_buffer else 0
+        buffer_max = sample_buffer.maxlen if sample_buffer else 0
     
     response = {
         'status': status,
         'device_online': device_online,
-        'data_age_seconds': data_age,
-        'sample_rate': SAMPLE_RATE
+        'sample_rate': SAMPLE_RATE,
+        'buffer_seconds': BUFFER_SECONDS,
+        'buffer_size': buffer_size,
+        'buffer_max': buffer_max,
+        'buffer_pct': round(100 * buffer_size / buffer_max, 1) if buffer_max > 0 else 0
     }
     
     import json
@@ -206,10 +232,15 @@ def command():
 
 def main():
     """Main entry point"""
+    config = load_config()
+    bridge_config = config.get('bridges', {}).get('psu', {})
+    sample_rate = bridge_config.get('sample_rate', 8)
+    hw_max = bridge_config.get('hw_max_rate', 10)
+    
     print("PSU Modbus RTU HTTP Bridge")
     print(f"Config: {CONFIG_PATH}")
-    print(f"Sample rate: {SAMPLE_RATE} Hz")
-    print(f"Endpoints: http://localhost:8883/metrics, /health")
+    print(f"Configured rate: {sample_rate} Hz (hardware max: {hw_max} Hz)")
+    print(f"Endpoints: http://localhost:8883/metrics, /health, /command")
     print()
     
     # Start reader thread
@@ -222,4 +253,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
