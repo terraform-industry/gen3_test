@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """
 NI cDAQ-9187 Analog Input HTTP Bridge
-Reads 16 channels (4-20mA) from 2x NI-9253 modules and exposes via HTTP /metrics endpoint
-Buffers samples at configured rate, dumps full buffer on /metrics request
+Reads 16 channels (4-20mA) from 2x NI-9253 modules
+Writes directly to InfluxDB for high-frequency data (bypasses Telegraf)
+Also exposes /metrics endpoint for debugging
 """
 
 import nidaqmx
 import yaml
 import time
 import threading
+import os
 from collections import deque
 from flask import Flask, Response
 from pathlib import Path
+from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS
 
 # Configuration
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "devices.yaml"
@@ -23,6 +27,9 @@ app = Flask(__name__)
 sample_buffer = None  # Will be initialized as deque
 device_online = False
 data_lock = threading.Lock()
+influx_write_api = None
+influx_bucket = None
+points_written = 0
 
 # Config values loaded at startup
 SAMPLE_RATE = 100
@@ -34,6 +41,45 @@ def load_config():
     with open(CONFIG_PATH, 'r') as f:
         config = yaml.safe_load(f)
     return config
+
+
+def setup_influxdb():
+    """Setup InfluxDB client for direct writes"""
+    global influx_write_api, influx_bucket
+    
+    config = load_config()
+    system_config = config.get('system', {})
+    
+    influx_url = system_config.get('influxdb_url', 'http://localhost:8086')
+    influx_org = system_config.get('influxdb_org', 'electrolyzer')
+    influx_bucket = system_config.get('influxdb_bucket', 'electrolyzer_data')
+    
+    # Get token from environment (same as Telegraf uses)
+    influx_token = os.environ.get('INFLUXDB_ADMIN_TOKEN', '')
+    
+    if not influx_token:
+        # Try loading from .env file
+        env_path = CONFIG_PATH.parent.parent.parent / ".env"
+        if env_path.exists():
+            with open(env_path) as f:
+                for line in f:
+                    if line.startswith('INFLUXDB_ADMIN_TOKEN='):
+                        influx_token = line.strip().split('=', 1)[1]
+                        break
+    
+    if not influx_token:
+        print("[WARN] INFLUXDB_ADMIN_TOKEN not set - direct writes disabled")
+        return False
+    
+    try:
+        client = InfluxDBClient(url=influx_url, token=influx_token, org=influx_org)
+        influx_write_api = client.write_api(write_options=SYNCHRONOUS)
+        print(f"[OK] Connected to InfluxDB at {influx_url}")
+        print(f"     Bucket: {influx_bucket}, Org: {influx_org}")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to connect to InfluxDB: {e}")
+        return False
 
 
 def convert_to_engineering_units(current_ma, hw_config, label_config):
@@ -51,8 +97,39 @@ def convert_to_engineering_units(current_ma, hw_config, label_config):
     return eng_value
 
 
+def write_to_influxdb(samples):
+    """Write batch of samples directly to InfluxDB"""
+    global points_written
+    
+    if not influx_write_api or not influx_bucket:
+        return False
+    
+    try:
+        # Build list of points
+        points = []
+        for sample in samples:
+            timestamp_ns = sample['timestamp_ns']
+            for ch_name, data in sample['readings'].items():
+                point = Point("ni_analog") \
+                    .tag("channel", ch_name) \
+                    .tag("hardware", "ni_cdaq") \
+                    .tag("location", "gen3_test_rig") \
+                    .field("value", float(data['value'])) \
+                    .field("raw_ma", float(data['raw_ma'])) \
+                    .time(timestamp_ns, WritePrecision.NS)
+                points.append(point)
+        
+        # Write batch
+        influx_write_api.write(bucket=influx_bucket, record=points)
+        points_written += len(points)
+        return True
+    except Exception as e:
+        print(f"[ERROR] InfluxDB write failed: {e}")
+        return False
+
+
 def read_analog_inputs():
-    """Continuously read analog inputs from NI cDAQ and buffer samples"""
+    """Continuously read analog inputs from NI cDAQ and write to InfluxDB"""
     global sample_buffer, device_online, SAMPLE_RATE, BUFFER_SECONDS
     
     config = load_config()
@@ -75,9 +152,14 @@ def read_analog_inputs():
     # Calculate samples per read (10 reads per second for responsive buffer)
     samples_per_read = max(1, SAMPLE_RATE // 10)
     
+    # Write batch size (write to InfluxDB every N samples)
+    write_batch_size = SAMPLE_RATE  # Write every ~1 second
+    pending_samples = []
+    
     print(f"Sample rate: {SAMPLE_RATE} Hz")
     print(f"Samples per read: {samples_per_read}")
     print(f"Buffer size: {max_samples} samples ({BUFFER_SECONDS}s)")
+    print(f"InfluxDB write batch: {write_batch_size} samples")
     
     while True:
         try:
@@ -158,12 +240,22 @@ def read_analog_inputs():
                             }
                             ch_idx += 1
                         
-                        # Add sample to buffer
+                        sample = {
+                            'timestamp_ns': timestamp_ns,
+                            'readings': readings
+                        }
+                        
+                        # Add to pending samples for InfluxDB write
+                        pending_samples.append(sample)
+                        
+                        # Also add to buffer for /metrics endpoint
                         with data_lock:
-                            sample_buffer.append({
-                                'timestamp_ns': timestamp_ns,
-                                'readings': readings
-                            })
+                            sample_buffer.append(sample)
+                    
+                    # Write to InfluxDB when we have enough samples
+                    if len(pending_samples) >= write_batch_size:
+                        write_to_influxdb(pending_samples)
+                        pending_samples = []
         
         except Exception as e:
             device_online = False
@@ -174,7 +266,7 @@ def read_analog_inputs():
 
 @app.route('/metrics')
 def metrics():
-    """Return all buffered metrics in InfluxDB line protocol format, then clear buffer"""
+    """Return all buffered metrics in InfluxDB line protocol format (for debugging)"""
     if not device_online:
         return Response("# Device offline\n", status=503, mimetype='text/plain')
     
@@ -182,9 +274,8 @@ def metrics():
         if sample_buffer is None or len(sample_buffer) == 0:
             return Response("# No data yet\n", status=503, mimetype='text/plain')
         
-        # Grab all buffered samples and clear
+        # Return copy of buffer (don't clear - direct write handles this now)
         samples = list(sample_buffer)
-        sample_buffer.clear()
     
     # Build InfluxDB line protocol - one line per channel per sample
     lines = []
@@ -215,7 +306,9 @@ def health():
         'buffer_seconds': BUFFER_SECONDS,
         'buffer_size': buffer_size,
         'buffer_max': buffer_max,
-        'buffer_pct': round(100 * buffer_size / buffer_max, 1) if buffer_max > 0 else 0
+        'buffer_pct': round(100 * buffer_size / buffer_max, 1) if buffer_max > 0 else 0,
+        'influxdb_enabled': influx_write_api is not None,
+        'points_written': points_written
     }
     
     import json
@@ -234,6 +327,9 @@ def main():
     print(f"Configured rate: {sample_rate} Hz (hardware max: {hw_max} Hz)")
     print(f"Endpoints: http://localhost:8881/metrics, /health")
     print()
+    
+    # Setup InfluxDB direct writes
+    setup_influxdb()
     
     # Start reader thread
     reader_thread = threading.Thread(target=read_analog_inputs, daemon=True)
