@@ -234,8 +234,8 @@ def main():
     poll_thread = threading.Thread(target=poll_bga, daemon=True)
     poll_thread.start()
     
-    # Start HTTP server
-    server = HTTPServer(('localhost', HTTP_PORT), MetricsHandler)
+    # Start HTTP server (bind to all interfaces for Docker access)
+    server = HTTPServer(('0.0.0.0', HTTP_PORT), MetricsHandler)
     
     try:
         server.serve_forever()

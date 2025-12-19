@@ -76,8 +76,8 @@ def read_analog_inputs():
     samples_per_read = max(1, SAMPLE_RATE // 10)
     
     print(f"Sample rate: {SAMPLE_RATE} Hz")
-    print(f"Buffer size: {max_samples} samples ({BUFFER_SECONDS}s)")
     print(f"Samples per read: {samples_per_read}")
+    print(f"Buffer size: {max_samples} samples ({BUFFER_SECONDS}s)")
     
     while True:
         try:
