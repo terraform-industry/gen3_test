@@ -11,7 +11,7 @@ OVERLOAD = 9.9E37  # BGA overload value
 
 def cmd(ser, text, read=True):
     ser.write((text + "\r").encode())
-    time.sleep(0.05)
+    time.sleep(0.03)  # 30ms optimal delay from speed test
     if not read:
         return None
     try:
@@ -75,7 +75,7 @@ def main():
               f"T={f'{tc:.3f}' if tc is not None else 'NA'}C  "
               f"P={f'{ps:.3f}' if ps is not None else 'NA'}psi")
         
-        time.sleep(0.5)
+        time.sleep(0.1)  # ~5Hz full poll rate (180ms poll + 100ms sleep)
 
 if __name__ == "__main__":
     try:
