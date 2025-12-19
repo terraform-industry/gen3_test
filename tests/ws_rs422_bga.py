@@ -11,7 +11,7 @@ OVERLOAD = 9.9E37  # BGA overload value
 
 def cmd(ser, text, read=True):
     ser.write((text + "\r").encode())
-    time.sleep(0.03)  # 30ms optimal delay from speed test
+    time.sleep(0.05)  # 50ms - reliable for back-to-back commands
     if not read:
         return None
     try:
