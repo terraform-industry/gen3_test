@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
 Pico TC-08 Thermocouple HTTP Bridge
-Reads 8 thermocouple channels and exposes via HTTP /metrics endpoint
-Buffers samples at configured rate, dumps full buffer on /metrics request
+Reads 8 thermocouple channels and writes directly to InfluxDB
+Also exposes /metrics endpoint for debugging
 """
 
 import ctypes
 import yaml
 import time
+import os
 import threading
 from collections import deque
 from flask import Flask, Response
 from pathlib import Path
+from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS
 
 # Configuration
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "devices.yaml"
@@ -24,6 +27,9 @@ sample_buffer = None  # Will be initialized as deque
 device_online = False
 data_lock = threading.Lock()
 tc08 = None
+influx_write_api = None
+influx_bucket = None
+points_written = 0
 
 # Config values loaded at startup
 SAMPLE_RATE = 1
@@ -35,6 +41,75 @@ def load_config():
     with open(CONFIG_PATH, 'r') as f:
         config = yaml.safe_load(f)
     return config
+
+
+def setup_influxdb():
+    """Setup InfluxDB client for direct writes"""
+    global influx_write_api, influx_bucket
+    
+    config = load_config()
+    system_config = config.get('system', {})
+    
+    influx_url = system_config.get('influxdb_url', 'http://localhost:8086')
+    influx_org = system_config.get('influxdb_org', 'electrolyzer')
+    influx_bucket = system_config.get('influxdb_bucket', 'electrolyzer_data')
+    
+    # Get token from environment
+    influx_token = os.environ.get('INFLUXDB_ADMIN_TOKEN', '')
+    
+    if not influx_token:
+        # Try loading from .env file
+        env_path = CONFIG_PATH.parent.parent.parent / ".env"
+        if env_path.exists():
+            with open(env_path) as f:
+                for line in f:
+                    if line.startswith('INFLUXDB_ADMIN_TOKEN='):
+                        influx_token = line.strip().split('=', 1)[1]
+                        break
+    
+    if not influx_token:
+        print("[WARN] INFLUXDB_ADMIN_TOKEN not set - direct writes disabled")
+        return False
+    
+    try:
+        client = InfluxDBClient(url=influx_url, token=influx_token, org=influx_org)
+        influx_write_api = client.write_api(write_options=SYNCHRONOUS)
+        print(f"[OK] Connected to InfluxDB at {influx_url}")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to connect to InfluxDB: {e}")
+        return False
+
+
+def write_to_influxdb(samples):
+    """Write batch of samples directly to InfluxDB"""
+    global points_written
+    
+    if not influx_write_api or not influx_bucket:
+        return False
+    
+    try:
+        points = []
+        for sample in samples:
+            timestamp_ns = sample['timestamp_ns']
+            for ch_name, data in sample['readings'].items():
+                if data['valid']:
+                    point = Point("tc08") \
+                        .tag("channel", ch_name) \
+                        .tag("type", data['type']) \
+                        .tag("hardware", "pico_tc08") \
+                        .tag("location", "gen3_test_rig") \
+                        .field("temp_c", float(data['value'])) \
+                        .time(timestamp_ns, WritePrecision.NS)
+                    points.append(point)
+        
+        if points:
+            influx_write_api.write(bucket=influx_bucket, record=points)
+            points_written += len(points)
+        return True
+    except Exception as e:
+        print(f"[ERROR] InfluxDB write failed: {e}")
+        return False
 
 
 def setup_dll(dll_path):
@@ -79,7 +154,7 @@ def setup_dll(dll_path):
 
 
 def read_thermocouples():
-    """Continuously read thermocouples from Pico TC-08 and buffer samples"""
+    """Continuously read thermocouples from Pico TC-08 and write to InfluxDB"""
     global sample_buffer, device_online, tc08, SAMPLE_RATE, BUFFER_SECONDS
     
     config = load_config()
@@ -95,11 +170,16 @@ def read_thermocouples():
     max_samples = SAMPLE_RATE * BUFFER_SECONDS
     sample_buffer = deque(maxlen=max_samples)
     
+    # Write batch size (write to InfluxDB every N samples)
+    write_batch_size = max(1, SAMPLE_RATE)  # Write every ~1 second
+    pending_samples = []
+    
     # Calculate sample interval in ms (hardware minimum is 1000ms)
     sample_interval_ms = max(1000, int(1000 / SAMPLE_RATE))
     
     print(f"Sample rate: {SAMPLE_RATE} Hz")
     print(f"Buffer size: {max_samples} samples ({BUFFER_SECONDS}s)")
+    print(f"InfluxDB write batch: {write_batch_size} samples")
     
     tc08 = setup_dll(dll_path)
     
@@ -171,12 +251,22 @@ def read_thermocouples():
                             'valid': False
                         }
                 
-                # Add sample to buffer
+                sample = {
+                    'timestamp_ns': time.time_ns(),
+                    'readings': readings
+                }
+                
+                # Add to pending samples for InfluxDB write
+                pending_samples.append(sample)
+                
+                # Add to buffer for /metrics endpoint
                 with data_lock:
-                    sample_buffer.append({
-                        'timestamp_ns': time.time_ns(),
-                        'readings': readings
-                    })
+                    sample_buffer.append(sample)
+                
+                # Write to InfluxDB when we have enough samples
+                if len(pending_samples) >= write_batch_size:
+                    write_to_influxdb(pending_samples)
+                    pending_samples = []
                 
                 time.sleep(sample_interval_ms / 1000.0)
         
@@ -198,7 +288,7 @@ def read_thermocouples():
 
 @app.route('/metrics')
 def metrics():
-    """Return all buffered metrics in InfluxDB line protocol format, then clear buffer"""
+    """Return buffered metrics in InfluxDB line protocol format (for debugging)"""
     if not device_online:
         return Response("# Device offline\n", status=503, mimetype='text/plain')
     
@@ -206,9 +296,7 @@ def metrics():
         if sample_buffer is None or len(sample_buffer) == 0:
             return Response("# No data yet\n", status=503, mimetype='text/plain')
         
-        # Grab all buffered samples and clear
         samples = list(sample_buffer)
-        sample_buffer.clear()
     
     # Build InfluxDB line protocol - one line per channel per sample
     lines = []
@@ -216,7 +304,6 @@ def metrics():
         timestamp_ns = sample['timestamp_ns']
         for ch_name, data in sample['readings'].items():
             if data['valid']:
-                # Format: measurement,tag1=value1 field1=value1 timestamp
                 line = f"tc08,channel={ch_name},type={data['type']} temp_c={data['value']:.2f} {timestamp_ns}"
                 lines.append(line)
     
@@ -240,7 +327,9 @@ def health():
         'buffer_seconds': BUFFER_SECONDS,
         'buffer_size': buffer_size,
         'buffer_max': buffer_max,
-        'buffer_pct': round(100 * buffer_size / buffer_max, 1) if buffer_max > 0 else 0
+        'buffer_pct': round(100 * buffer_size / buffer_max, 1) if buffer_max > 0 else 0,
+        'influxdb_enabled': influx_write_api is not None,
+        'points_written': points_written
     }
     
     import json
@@ -254,11 +343,14 @@ def main():
     sample_rate = bridge_config.get('sample_rate', 1)
     hw_max = bridge_config.get('hw_max_rate', 1)
     
-    print("Pico TC-08 Thermocouple HTTP Bridge")
+    print("Pico TC-08 Thermocouple HTTP Bridge (Direct InfluxDB)")
     print(f"Config: {CONFIG_PATH}")
     print(f"Configured rate: {sample_rate} Hz (hardware max: {hw_max} Hz)")
     print(f"Endpoints: http://localhost:8882/metrics, /health")
     print()
+    
+    # Setup InfluxDB direct writes
+    setup_influxdb()
     
     # Start reader thread
     reader_thread = threading.Thread(target=read_thermocouples, daemon=True)

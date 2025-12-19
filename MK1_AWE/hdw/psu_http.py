@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
 PSU Modbus RTU HTTP Bridge
-Reads PSU data via RS485/USB and exposes via HTTP /metrics endpoint
-Buffers samples at configured rate, dumps full buffer on /metrics request
+Reads PSU data via RS485/USB and writes directly to InfluxDB
+Also exposes /metrics endpoint for debugging and /command for control
 """
 
 import minimalmodbus
 import yaml
 import time
+import os
 import threading
 import queue
 from collections import deque
 from flask import Flask, Response, request, jsonify
 from pathlib import Path
+from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS
 
 # Configuration
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "devices.yaml"
@@ -25,6 +28,9 @@ sample_buffer = None  # Will be initialized as deque
 device_online = False
 data_lock = threading.Lock()
 command_queue = queue.Queue()
+influx_write_api = None
+influx_bucket = None
+points_written = 0
 
 # Config values loaded at startup
 SAMPLE_RATE = 8
@@ -38,8 +44,86 @@ def load_config():
     return config
 
 
+def setup_influxdb():
+    """Setup InfluxDB client for direct writes"""
+    global influx_write_api, influx_bucket
+    
+    config = load_config()
+    system_config = config.get('system', {})
+    
+    influx_url = system_config.get('influxdb_url', 'http://localhost:8086')
+    influx_org = system_config.get('influxdb_org', 'electrolyzer')
+    influx_bucket = system_config.get('influxdb_bucket', 'electrolyzer_data')
+    
+    # Get token from environment
+    influx_token = os.environ.get('INFLUXDB_ADMIN_TOKEN', '')
+    
+    if not influx_token:
+        # Try loading from .env file
+        env_path = CONFIG_PATH.parent.parent.parent / ".env"
+        if env_path.exists():
+            with open(env_path) as f:
+                for line in f:
+                    if line.startswith('INFLUXDB_ADMIN_TOKEN='):
+                        influx_token = line.strip().split('=', 1)[1]
+                        break
+    
+    if not influx_token:
+        print("[WARN] INFLUXDB_ADMIN_TOKEN not set - direct writes disabled")
+        return False
+    
+    try:
+        client = InfluxDBClient(url=influx_url, token=influx_token, org=influx_org)
+        influx_write_api = client.write_api(write_options=SYNCHRONOUS)
+        print(f"[OK] Connected to InfluxDB at {influx_url}")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to connect to InfluxDB: {e}")
+        return False
+
+
+def write_to_influxdb(samples):
+    """Write batch of samples directly to InfluxDB"""
+    global points_written
+    
+    if not influx_write_api or not influx_bucket:
+        return False
+    
+    try:
+        points = []
+        for sample in samples:
+            timestamp_ns = sample['timestamp_ns']
+            readings = sample['readings']
+            
+            point = Point("psu") \
+                .tag("hardware", "psu") \
+                .tag("location", "gen3_test_rig") \
+                .field("voltage", float(readings['voltage'])) \
+                .field("current", float(readings['current'])) \
+                .field("power", float(readings['power'])) \
+                .field("capacity", float(readings['capacity'])) \
+                .field("runtime", int(readings['runtime'])) \
+                .field("battery_v", float(readings['battery_v'])) \
+                .field("temperature", int(readings['temperature'])) \
+                .field("status", int(readings['status'])) \
+                .field("set_voltage_rb", float(readings['set_voltage_rb'])) \
+                .field("set_current_rb", float(readings['set_current_rb'])) \
+                .field("output_enable", int(readings['output_enable'])) \
+                .field("sys_fault", int(readings['sys_fault'])) \
+                .field("mod_fault", int(readings['mod_fault'])) \
+                .time(timestamp_ns, WritePrecision.NS)
+            points.append(point)
+        
+        influx_write_api.write(bucket=influx_bucket, record=points)
+        points_written += len(points)
+        return True
+    except Exception as e:
+        print(f"[ERROR] InfluxDB write failed: {e}")
+        return False
+
+
 def read_psu_data():
-    """Continuously read PSU data via Modbus RTU and buffer samples"""
+    """Continuously read PSU data via Modbus RTU and write to InfluxDB"""
     global sample_buffer, device_online, SAMPLE_RATE, BUFFER_SECONDS
     
     config = load_config()
@@ -54,6 +138,10 @@ def read_psu_data():
     max_samples = SAMPLE_RATE * BUFFER_SECONDS
     sample_buffer = deque(maxlen=max_samples)
     
+    # Write batch size (write to InfluxDB every N samples)
+    write_batch_size = SAMPLE_RATE  # Write every ~1 second
+    pending_samples = []
+    
     com_port = psu_config['com_port']
     if not com_port:
         print("[ERROR] COM port not configured in devices.yaml")
@@ -62,6 +150,7 @@ def read_psu_data():
     
     print(f"Sample rate: {SAMPLE_RATE} Hz")
     print(f"Buffer size: {max_samples} samples ({BUFFER_SECONDS}s)")
+    print(f"InfluxDB write batch: {write_batch_size} samples")
     
     while True:
         psu = None
@@ -130,12 +219,22 @@ def read_psu_data():
                     'output_enable': raw_values[12]      # 1=ON, 0=OFF
                 }
                 
-                # Add sample to buffer with timestamp
+                sample = {
+                    'timestamp_ns': time.time_ns(),
+                    'readings': readings
+                }
+                
+                # Add to pending samples for InfluxDB write
+                pending_samples.append(sample)
+                
+                # Also add to buffer for /metrics endpoint
                 with data_lock:
-                    sample_buffer.append({
-                        'timestamp_ns': time.time_ns(),
-                        'readings': readings
-                    })
+                    sample_buffer.append(sample)
+                
+                # Write to InfluxDB when we have enough samples
+                if len(pending_samples) >= write_batch_size:
+                    write_to_influxdb(pending_samples)
+                    pending_samples = []
                 
                 time.sleep(1.0 / SAMPLE_RATE)
         
@@ -148,7 +247,7 @@ def read_psu_data():
 
 @app.route('/metrics')
 def metrics():
-    """Return all buffered metrics in InfluxDB line protocol format, then clear buffer"""
+    """Return buffered metrics in InfluxDB line protocol format (for debugging)"""
     if not device_online:
         return Response("# Device offline\n", status=503, mimetype='text/plain')
     
@@ -156,11 +255,8 @@ def metrics():
         if sample_buffer is None or len(sample_buffer) == 0:
             return Response("# No data yet\n", status=503, mimetype='text/plain')
         
-        # Grab all buffered samples and clear
         samples = list(sample_buffer)
-        sample_buffer.clear()
     
-    # Build InfluxDB line protocol - one line per sample
     lines = []
     for sample in samples:
         readings = sample['readings']
@@ -203,7 +299,9 @@ def health():
         'buffer_seconds': BUFFER_SECONDS,
         'buffer_size': buffer_size,
         'buffer_max': buffer_max,
-        'buffer_pct': round(100 * buffer_size / buffer_max, 1) if buffer_max > 0 else 0
+        'buffer_pct': round(100 * buffer_size / buffer_max, 1) if buffer_max > 0 else 0,
+        'influxdb_enabled': influx_write_api is not None,
+        'points_written': points_written
     }
     
     import json
@@ -221,9 +319,7 @@ def command():
         if not cmd_data:
             return jsonify({'success': False, 'error': 'No JSON data'}), 400
         
-        # Queue command for execution in read loop
         command_queue.put(cmd_data)
-        
         return jsonify({'success': True, 'message': 'Command queued'})
     
     except Exception as e:
@@ -237,11 +333,14 @@ def main():
     sample_rate = bridge_config.get('sample_rate', 8)
     hw_max = bridge_config.get('hw_max_rate', 10)
     
-    print("PSU Modbus RTU HTTP Bridge")
+    print("PSU Modbus RTU HTTP Bridge (Direct InfluxDB)")
     print(f"Config: {CONFIG_PATH}")
     print(f"Configured rate: {sample_rate} Hz (hardware max: {hw_max} Hz)")
     print(f"Endpoints: http://localhost:8883/metrics, /health, /command")
     print()
+    
+    # Setup InfluxDB direct writes
+    setup_influxdb()
     
     # Start reader thread
     reader_thread = threading.Thread(target=read_psu_data, daemon=True)
